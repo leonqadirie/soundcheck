@@ -126,6 +126,10 @@ defmodule Soundcheck.Elixir.ModuleIndex do
     router: :router
   }
 
+  @doc "Every function clause `entry` defines, across all functions."
+  @spec clauses(Entry.t()) :: [Clause.t()]
+  def clauses(%Entry{functions: functions}), do: functions |> Map.values() |> List.flatten()
+
   @doc "Indexes every module `ast` defines, in source order."
   @spec modules(Macro.t(), String.t(), Path.t()) :: [Entry.t()]
   def modules(ast, source, file) do
@@ -299,6 +303,25 @@ defmodule Soundcheck.Elixir.ModuleIndex do
   end
 
   defp expand_in(ast, _env), do: ast
+
+  defp expand_segments([first | rest] = segments, aliases) do
+    case aliases do
+      %{^first => full} -> Module.concat([full | rest])
+      _none -> Module.concat(segments)
+    end
+  end
+
+  @doc """
+  Expands an alias AST against `aliases`. Returns the module atom, or the
+  AST itself when the alias is not a literal.
+  """
+  @spec expand(Macro.t(), %{atom() => module()}) :: module() | Macro.t()
+  def expand({:__aliases__, _meta, segments} = ast, aliases) do
+    if Enum.all?(segments, &is_atom/1), do: expand_segments(segments, aliases), else: ast
+  end
+
+  def expand(atom, _aliases) when is_atom(atom), do: atom
+  def expand(ast, _aliases), do: ast
 
   defp uses(scoped) do
     for {{:use, meta, [target | args]}, env} <- scoped do

@@ -25,7 +25,7 @@ defmodule Soundcheck.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger], mod: {Soundcheck.Application, []}]
+    [extra_applications: [:logger, :crypto], mod: {Soundcheck.Application, []}]
   end
 
   defp aliases do
