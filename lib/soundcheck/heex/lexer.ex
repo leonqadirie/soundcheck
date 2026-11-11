@@ -3,24 +3,29 @@ defmodule Soundcheck.Heex.Lexer do
   # Splits HEEx source into tokens, recovering from errors instead of
   # raising.
   #
-  # Positions are byte offsets into the source: `start` inclusive, `stop`
-  # exclusive. `Soundcheck.Heex.Parser` turns them into file positions.
+  # Every token ends in a meta map of positions. Positions are byte offsets
+  # into the source: `start` inclusive, `stop` exclusive.
+  # `Soundcheck.Heex.Parser` turns them into file positions.
   #
   # Tokens:
   #
-  #   * `{:text, start, stop}`
-  #   * `{:open, name, attrs, start, stop, closing}`, `closing` `:normal` or `:self`
-  #   * `{:close, name, start, stop}`
-  #   * `{:body_expr, code_start, code_stop, start, stop}` for `{expr}`
-  #   * `{:eex, kind, marker, code_start, code_stop, start, stop}`, `kind` one of
-  #     `:expr`, `:start`, `:middle`, `:end`; `marker` `"="` or `""`
-  #   * `{:comment, kind, start, stop}`, `kind` `:html` or `:eex`
-  #   * `{:error, message, start, stop}`
+  #   * `{:text, meta}`
+  #   * `{:open, name, attrs, meta}`; the meta also holds `closing`,
+  #     `:normal` or `:self`
+  #   * `{:close, name, meta}`
+  #   * `{:body_expr, meta}` for `{expr}`; the meta also holds `code_start`
+  #     and `code_stop`, the offsets of the expression inside the braces
+  #   * `{:eex, kind, marker, meta}`, `kind` one of `:expr`, `:start`,
+  #     `:middle`, `:end`; `marker` `"="` or `""`; the meta also holds
+  #     `code_start` and `code_stop`
+  #   * `{:comment, kind, meta}`, `kind` `:html` or `:eex`
+  #   * `{:error, message, meta}`
   #
-  # An attribute is `{name, value, start, stop, name_start, name_stop}`, where
-  # `name` is a binary or `:root` (`{@rest}`, with `nil` name positions), and
-  # `value` is `{:string, delimiter, value_start, value_stop}`,
-  # `{:expr, code_start, code_stop}`, or `nil`.
+  # An attribute is `{name, value, meta}`, where `name` is a binary or
+  # `:root` (`{@rest}`), and `value` is
+  # `{:string, delimiter, value_start, value_stop}`,
+  # `{:expr, code_start, code_stop}`, or `nil`. The meta of a named
+  # attribute also holds `name_start` and `name_stop`.
   #
   # Every scanning rule mirrors LiveView's tokenizer, so both split any
   # template LiveView accepts the same way: an embedded Elixir expression
@@ -46,19 +51,28 @@ defmodule Soundcheck.Heex.Lexer do
   @type attr_value ::
           {:string, delimiter :: ?" | ?', offset(), offset()} | {:expr, offset(), offset()} | nil
 
+  @type meta :: %{start: offset(), stop: offset()}
+  @type code_meta :: %{
+          start: offset(),
+          stop: offset(),
+          code_start: offset(),
+          code_stop: offset()
+        }
+
   @type attr ::
-          {name :: String.t() | :root, attr_value(), start :: offset(), stop :: offset(),
-           name_start :: offset() | nil, name_stop :: offset() | nil}
+          {name :: String.t(), attr_value(),
+           %{start: offset(), stop: offset(), name_start: offset(), name_stop: offset()}}
+          | {:root, attr_value(), meta()}
 
   @type token ::
-          {:text, offset(), offset()}
-          | {:open, name :: String.t(), [attr()], offset(), offset(), :normal | :self}
-          | {:close, name :: String.t(), offset(), offset()}
-          | {:body_expr, offset(), offset(), offset(), offset()}
-          | {:eex, :expr | :start | :middle | :end, marker :: String.t(), offset(), offset(),
-             offset(), offset()}
-          | {:comment, :html | :eex, offset(), offset()}
-          | {:error, message :: String.t(), offset(), offset()}
+          {:text, meta()}
+          | {:open, name :: String.t(), [attr()],
+             %{start: offset(), stop: offset(), closing: :normal | :self}}
+          | {:close, name :: String.t(), meta()}
+          | {:body_expr, code_meta()}
+          | {:eex, :expr | :start | :middle | :end, marker :: String.t(), code_meta()}
+          | {:comment, :html | :eex, meta()}
+          | {:error, message :: String.t(), meta()}
 
   @spec tokenize(String.t()) :: [token()]
   def tokenize(source) when is_binary(source) do
@@ -119,11 +133,11 @@ defmodule Soundcheck.Heex.Lexer do
 
     case expr(rest_at(src, i + 1), i + 1, 0) do
       {:ok, close} ->
-        resume(src, close + 1, [{:body_expr, i + 1, close, i, close + 1} | acc], nil)
+        meta = %{start: i, stop: close + 1, code_start: i + 1, code_stop: close}
+        resume(src, close + 1, [{:body_expr, meta} | acc], nil)
 
       :error ->
-        stop = byte_size(src)
-        [{:error, "unclosed `{` expression", i, stop} | acc]
+        [error("unclosed `{` expression", i, byte_size(src)) | acc]
     end
   end
 
@@ -132,7 +146,7 @@ defmodule Soundcheck.Heex.Lexer do
 
   defp resume(src, i, acc, no_curly), do: text(rest_at(src, i), i, src, i, acc, no_curly)
 
-  defp flush(acc, start, stop) when stop > start, do: [{:text, start, stop} | acc]
+  defp flush(acc, start, stop) when stop > start, do: [{:text, %{start: start, stop: stop}} | acc]
   defp flush(acc, _start, _stop), do: acc
 
   # ── Comments ──
@@ -141,11 +155,11 @@ defmodule Soundcheck.Heex.Lexer do
     case find(src, terminator, content_start) do
       {:ok, at} ->
         stop = at + byte_size(terminator)
-        {{:comment, kind, start, stop}, stop}
+        {{:comment, kind, %{start: start, stop: stop}}, stop}
 
       :error ->
         stop = byte_size(src)
-        {{:error, message, start, stop}, stop}
+        {error(message, start, stop), stop}
     end
   end
 
@@ -161,11 +175,12 @@ defmodule Soundcheck.Heex.Lexer do
     case find(src, "%>", code_start) do
       {:ok, at} ->
         code = binary_part(src, code_start, at - code_start)
-        {{:eex, classify(code), marker, code_start, at, start, at + 2}, at + 2}
+        meta = %{start: start, stop: at + 2, code_start: code_start, code_stop: at}
+        {{:eex, classify(code), marker, meta}, at + 2}
 
       :error ->
         stop = byte_size(src)
-        {{:error, "unclosed EEx tag `<%`", start, stop}, stop}
+        {error("unclosed EEx tag `<%`", start, stop), stop}
     end
   end
 
@@ -192,11 +207,11 @@ defmodule Soundcheck.Heex.Lexer do
 
     case rest_at(src, after_space) do
       ">" <> _ when name != "" ->
-        {{:close, name, start, after_space + 1}, after_space + 1}
+        {{:close, name, %{start: start, stop: after_space + 1}}, after_space + 1}
 
       _ ->
         stop = max(after_space, start + 2)
-        {{:error, "malformed closing tag", start, stop}, stop}
+        {error("malformed closing tag", start, stop), stop}
     end
   end
 
@@ -208,15 +223,14 @@ defmodule Soundcheck.Heex.Lexer do
 
     case attrs(src, after_name, [], []) do
       {:ok, attrs, closing, stop, errors} ->
-        open = {:open, name, Enum.reverse(attrs), start, stop, closing}
+        open = {:open, name, Enum.reverse(attrs), %{start: start, stop: stop, closing: closing}}
         {raw, next} = raw_text(src, name, closing, stop)
         {open, raw ++ errors ++ [open], next}
 
       {:eof, attrs, errors} ->
         stop = byte_size(src)
-        open = {:open, name, Enum.reverse(attrs), start, stop, :normal}
-        error = {:error, "unclosed tag `<#{name}`", start, stop}
-        {open, [error | errors] ++ [open], stop}
+        open = {:open, name, Enum.reverse(attrs), %{start: start, stop: stop, closing: :normal}}
+        {open, [error("unclosed tag `<#{name}`", start, stop) | errors] ++ [open], stop}
     end
   end
 
@@ -279,11 +293,11 @@ defmodule Soundcheck.Heex.Lexer do
       "{" <> _ ->
         case expr(rest_at(src, i + 1), i + 1, 0) do
           {:ok, close} ->
-            attr = {:root, {:expr, i + 1, close}, i, close + 1, nil, nil}
+            attr = {:root, {:expr, i + 1, close}, %{start: i, stop: close + 1}}
             attrs(src, close + 1, [attr | acc], errors)
 
           :error ->
-            {:eof, acc, [{:error, "unclosed `{` in attribute", i, byte_size(src)} | errors]}
+            {:eof, acc, [error("unclosed `{` in attribute", i, byte_size(src)) | errors]}
         end
 
       _ ->
@@ -296,7 +310,7 @@ defmodule Soundcheck.Heex.Lexer do
 
     if name == "" do
       # A character that cannot start an attribute, such as a stray quote.
-      error = {:error, "unexpected character in tag", start, start + 1}
+      error = error("unexpected character in tag", start, start + 1)
       attrs(src, start + 1, acc, [error | errors])
     else
       after_name = skip_whitespace(src, name_stop)
@@ -314,7 +328,8 @@ defmodule Soundcheck.Heex.Lexer do
           )
 
         _ ->
-          attrs(src, name_stop, [{name, nil, start, name_stop, start, name_stop} | acc], errors)
+          bare = named_attr(name, nil, start, name_stop, name_stop)
+          attrs(src, name_stop, [bare | acc], errors)
       end
     end
   end
@@ -324,26 +339,27 @@ defmodule Soundcheck.Heex.Lexer do
       <<quote, _::binary>> when quote in [?", ?'] ->
         case find(src, <<quote>>, i + 1) do
           {:ok, close} ->
-            attr = {name, {:string, quote, i + 1, close}, start, close + 1, start, name_stop}
+            attr = named_attr(name, {:string, quote, i + 1, close}, start, close + 1, name_stop)
             attrs(src, close + 1, [attr | acc], errors)
 
           :error ->
-            {:eof, acc, [{:error, "unclosed attribute value", i, byte_size(src)} | errors]}
+            {:eof, acc, [error("unclosed attribute value", i, byte_size(src)) | errors]}
         end
 
       "{" <> _ ->
         case expr(rest_at(src, i + 1), i + 1, 0) do
           {:ok, close} ->
-            attr = {name, {:expr, i + 1, close}, start, close + 1, start, name_stop}
+            attr = named_attr(name, {:expr, i + 1, close}, start, close + 1, name_stop)
             attrs(src, close + 1, [attr | acc], errors)
 
           :error ->
-            {:eof, acc, [{:error, "unclosed `{` in attribute", i, byte_size(src)} | errors]}
+            {:eof, acc, [error("unclosed `{` in attribute", i, byte_size(src)) | errors]}
         end
 
       _ ->
-        error = {:error, "expected attribute value after `=`", start, i}
-        attrs(src, i, [{name, nil, start, name_stop, start, name_stop} | acc], [error | errors])
+        error = error("expected attribute value after `=`", start, i)
+        bare = named_attr(name, nil, start, name_stop, name_stop)
+        attrs(src, i, [bare | acc], [error | errors])
     end
   end
 
@@ -351,19 +367,19 @@ defmodule Soundcheck.Heex.Lexer do
   # `phx-no-curly-interpolation` until its tag depth returns to zero. The
   # depth counts every `>`-terminated open tag, void elements included, and
   # every closing tag; `<script>` and `<style>` do not count.
-  defp track_open(nil, {:open, name, attrs, _start, _stop, :normal}) do
+  defp track_open(nil, {:open, name, attrs, %{closing: :normal}}) do
     if name not in @raw_text_tags and
-         Enum.any?(attrs, &match?({"phx-no-curly-interpolation", _, _, _, _, _}, &1)),
+         Enum.any?(attrs, &match?({"phx-no-curly-interpolation", _value, _meta}, &1)),
        do: 1
   end
 
-  defp track_open(depth, {:open, name, _attrs, _start, _stop, :normal})
+  defp track_open(depth, {:open, name, _attrs, %{closing: :normal}})
        when is_integer(depth) and name not in @raw_text_tags, do: depth + 1
 
   defp track_open(no_curly, _token), do: no_curly
 
-  defp track_close(1, {:close, _name, _start, _stop}), do: nil
-  defp track_close(depth, {:close, _name, _start, _stop}) when is_integer(depth), do: depth - 1
+  defp track_close(1, {:close, _name, _meta}), do: nil
+  defp track_close(depth, {:close, _name, _meta}) when is_integer(depth), do: depth - 1
   defp track_close(no_curly, _token), do: no_curly
 
   # ── Elixir expressions ──
@@ -383,6 +399,12 @@ defmodule Soundcheck.Heex.Lexer do
   defp expr(<<_, rest::binary>>, i, depth), do: expr(rest, i + 1, depth)
 
   # ── Helpers ──
+
+  defp error(message, start, stop), do: {:error, message, %{start: start, stop: stop}}
+
+  # A named attribute, whose name starts where the attribute does.
+  defp named_attr(name, value, start, stop, name_stop),
+    do: {name, value, %{start: start, stop: stop, name_start: start, name_stop: name_stop}}
 
   defp rest_at(src, i), do: binary_part(src, i, byte_size(src) - i)
 

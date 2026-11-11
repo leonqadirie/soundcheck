@@ -72,38 +72,27 @@ defmodule Soundcheck.Heex.Parser do
     {Enum.reverse(children), Enum.reverse(errors)}
   end
 
-  defp step({:text, start, stop}, state, ctx),
-    do: append(state, %Node.Text{value: slice(ctx, start, stop), span: span(ctx, start, stop)})
+  defp step({:text, meta}, state, ctx),
+    do: append(state, %Node.Text{value: slice(ctx, meta), span: span(ctx, meta)})
 
-  defp step({:comment, kind, start, stop}, state, ctx),
-    do:
-      append(state, %Node.Comment{
-        value: slice(ctx, start, stop),
-        kind: kind,
-        span: span(ctx, start, stop)
-      })
+  defp step({:comment, kind, meta}, state, ctx),
+    do: append(state, %Node.Comment{value: slice(ctx, meta), kind: kind, span: span(ctx, meta)})
 
-  defp step({:body_expr, code_start, code_stop, start, stop}, state, ctx) do
-    {ast, source} = expr(ctx, code_start, code_stop)
-    append(state, %Node.BodyExpr{ast: ast, source: source, span: span(ctx, start, stop)})
+  defp step({:body_expr, meta}, state, ctx) do
+    {ast, source} = expr(ctx, meta.code_start, meta.code_stop)
+    append(state, %Node.BodyExpr{ast: ast, source: source, span: span(ctx, meta)})
   end
 
-  defp step({:eex, :expr, marker, code_start, code_stop, start, stop}, state, ctx) do
-    {ast, source} = expr(ctx, code_start, code_stop)
-
-    append(state, %Node.Eex{
-      ast: ast,
-      source: source,
-      marker: marker,
-      span: span(ctx, start, stop)
-    })
+  defp step({:eex, :expr, marker, meta}, state, ctx) do
+    {ast, source} = expr(ctx, meta.code_start, meta.code_stop)
+    append(state, %Node.Eex{ast: ast, source: source, marker: marker, span: span(ctx, meta)})
   end
 
-  defp step({:eex, :start, marker, code_start, code_stop, start, stop}, {stack, errors}, ctx) do
-    source = slice(ctx, code_start, code_stop)
+  defp step({:eex, :start, marker, %{start: start} = meta}, {stack, errors}, ctx) do
+    source = slice(ctx, meta.code_start, meta.code_stop)
 
     block = %{
-      head: %{source: source, code_start: code_start, span: span(ctx, start, stop)},
+      head: %{source: source, code_start: meta.code_start, span: span(ctx, meta)},
       marker: marker,
       start: start,
       clauses: [],
@@ -113,8 +102,9 @@ defmodule Soundcheck.Heex.Parser do
     {[{:block, block, []} | stack], errors}
   end
 
-  defp step({:eex, kind, _marker, code_start, code_stop, start, stop}, {stack, errors}, ctx)
-       when kind in [:middle, :end] do
+  defp step({:eex, kind, _marker, meta}, {stack, errors}, ctx) when kind in [:middle, :end] do
+    %{start: start, stop: stop, code_start: code_start, code_stop: code_stop} = meta
+
     case unwind_to_block(stack, errors, start, ctx) do
       {:ok, [{:block, block, children} | rest], errors} ->
         block = finish_clause(block, children, start, ctx)
@@ -136,22 +126,22 @@ defmodule Soundcheck.Heex.Parser do
         error = %Node.Error{
           message:
             "unexpected `<% #{String.trim(slice(ctx, code_start, code_stop))} %>` outside a block",
-          span: span(ctx, start, stop)
+          span: span(ctx, meta)
         }
 
         {stack, [error | errors]}
     end
   end
 
-  defp step({:open, name, attrs, start, stop, closing}, state, ctx) do
+  defp step({:open, name, attrs, %{start: start, closing: closing} = meta}, state, ctx) do
     kind = kind(name)
 
     element = %Node.Element{
       tag: name,
       kind: kind,
       attrs: Enum.map(attrs, &attribute(&1, ctx)),
-      span: span(ctx, start, stop),
-      open_span: span(ctx, start, stop)
+      span: span(ctx, meta),
+      open_span: span(ctx, meta)
     }
 
     cond do
@@ -167,7 +157,7 @@ defmodule Soundcheck.Heex.Parser do
     end
   end
 
-  defp step({:close, name, start, stop}, {stack, errors}, ctx) do
+  defp step({:close, name, %{start: start, stop: stop} = meta}, {stack, errors}, ctx) do
     if open_element?(stack, name) do
       {stack, errors} = unwind_to_element(stack, errors, name, start, ctx)
       [{:element, {element, _start}, children} | rest] = stack
@@ -182,15 +172,15 @@ defmodule Soundcheck.Heex.Parser do
     else
       error = %Node.Error{
         message: "unmatched closing tag `</#{name}>`",
-        span: span(ctx, start, stop)
+        span: span(ctx, meta)
       }
 
       {stack, [error | errors]}
     end
   end
 
-  defp step({:error, message, start, stop}, {stack, errors}, ctx),
-    do: {stack, [%Node.Error{message: message, span: span(ctx, start, stop)} | errors]}
+  defp step({:error, message, meta}, {stack, errors}, ctx),
+    do: {stack, [%Node.Error{message: message, span: span(ctx, meta)} | errors]}
 
   defp append({[{type, data, children} | rest], errors}, node),
     do: {[{type, data, [node | children]} | rest], errors}
@@ -278,14 +268,18 @@ defmodule Soundcheck.Heex.Parser do
 
   # ── Attributes and expressions ──
 
-  defp attribute({name, value, start, stop, name_start, name_stop}, ctx) do
+  defp attribute({name, value, meta}, ctx) do
     %Node.Attr{
       name: name,
       value: attr_value(value, ctx),
-      span: span(ctx, start, stop),
-      name_span: name_start && span(ctx, name_start, name_stop)
+      span: span(ctx, meta),
+      name_span: name_span(ctx, meta)
     }
   end
+
+  # A `{@rest}` attribute has no name.
+  defp name_span(ctx, %{name_start: start, name_stop: stop}), do: span(ctx, start, stop)
+  defp name_span(_ctx, _meta), do: nil
 
   defp attr_value(nil, _ctx), do: nil
 
@@ -327,7 +321,10 @@ defmodule Soundcheck.Heex.Parser do
 
   # ── Positions ──
 
+  defp slice(ctx, %{start: start, stop: stop}), do: slice(ctx, start, stop)
   defp slice(ctx, start, stop), do: binary_part(ctx.src, start, stop - start)
+
+  defp span(ctx, %{start: start, stop: stop}), do: span(ctx, start, stop)
 
   defp span(ctx, start, stop),
     do: Span.new(ctx.file, file_position(ctx, start), file_position(ctx, stop))
