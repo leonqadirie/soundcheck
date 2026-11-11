@@ -175,6 +175,14 @@ defmodule Soundcheck.JS.Extractor do
     end)
   end
 
+  @doc """
+  Resolves the keys of the object `ref` points to within this file, following
+  bindings, member assignments, `Object.assign`, and spreads. Returns the
+  same shape as `registry/1`.
+  """
+  @spec object_names(Facts.t(), ref()) :: %{names: %{String.t() => ref()}, open: [term()]}
+  def object_names(%Facts{} = facts, ref), do: resolve_object_ref(facts, ref, MapSet.new())
+
   @doc "Returns the pushes and handled events lexically inside the object `id`."
   @spec events_in(Facts.t(), non_neg_integer()) :: %{pushes: [push()], handles: [handle()]}
   def events_in(%Facts{objects: objects} = facts, id) do

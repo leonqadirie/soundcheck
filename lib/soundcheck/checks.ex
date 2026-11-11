@@ -5,7 +5,10 @@ defmodule Soundcheck.Checks do
   # check's `default?/0`, so they cannot drift apart.
 
   @checks [
-    Soundcheck.Check.Warning.LiveViewCallbackInComponent
+    Soundcheck.Check.Design.UnusedEventHandler,
+    Soundcheck.Check.Warning.EventPayloadMismatch,
+    Soundcheck.Check.Warning.LiveViewCallbackInComponent,
+    Soundcheck.Check.Warning.UnhandledEvent
   ]
 
   @doc "The `checks: %{extra: [...]}` entries for the plugin's default Credo config."

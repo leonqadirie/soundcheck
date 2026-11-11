@@ -13,4 +13,19 @@ defmodule Soundcheck.Span do
 
   @spec new(Path.t(), position(), position()) :: t()
   def new(file, start, stop), do: %__MODULE__{file: file, start: start, stop: stop}
+
+  @doc """
+  The span of `written` from the line and column in an AST node's
+  `meta`, for source text that `written` reproduces exactly.
+  """
+  @spec covering(Path.t(), keyword(), String.t()) :: t()
+  def covering(file, meta, written) do
+    {line, column} = {meta[:line], meta[:column]}
+    new(file, {line, column}, {line, column + String.length(written)})
+  end
+
+  @doc "Returns `true` when `position` lies within `span` (start inclusive, stop exclusive)."
+  @spec contains?(t(), position()) :: boolean()
+  def contains?(%__MODULE__{start: start, stop: stop}, position),
+    do: position >= start and position < stop
 end

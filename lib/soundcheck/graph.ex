@@ -112,6 +112,10 @@ defmodule Soundcheck.Graph do
     |> Enum.group_by(fn %Template{owner: {module, _fun}} -> module end)
   end
 
+  @doc "Returns the indexed module named `name`, or `nil`."
+  @spec module(t(), module()) :: ModuleIndex.Entry.t() | nil
+  def module(%__MODULE__{modules_by_name: modules}, name), do: Map.get(modules, name)
+
   @doc "Returns `{entry, clause}` for every function clause of every indexed module."
   @spec clauses(t()) :: [{ModuleIndex.Entry.t(), ModuleIndex.Clause.t()}]
   def clauses(%__MODULE__{modules: modules}),
