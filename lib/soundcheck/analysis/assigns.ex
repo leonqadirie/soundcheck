@@ -156,7 +156,7 @@ defmodule Soundcheck.Analysis.Assigns do
   @spec on_mount_keys(module()) :: {:ok, MapSet.t(atom())} | :unknown
   def on_mount_keys(module) do
     case DebugInfo.definitions(module) do
-      {:ok, %{definitions: definitions}} ->
+      {:ok, %DebugInfo.Info{definitions: definitions}} ->
         functions =
           Map.new(definitions, fn {name_arity, _kind, _meta, clauses} -> {name_arity, clauses} end)
 

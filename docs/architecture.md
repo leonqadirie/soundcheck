@@ -335,7 +335,7 @@ defmodule Soundcheck.JS.Extractor.Facts do
             object_assigns: [],    # {target, [ref]}       Object.assign(Hooks, ...)
             imports: %{},          # local => {source, :default | :namespace | name}
             exports: %{},          # :default | name => ref
-            live_sockets: [],      # %{hooks: ref | {:options, ref} | nil, span}
+            live_sockets: [],      # %LiveSocket{hooks: ref | {:options, ref} | nil, span}
             pushes: [],            # %{kind: :push_event | :push_event_to, event, target, offset, span}
             handles: [],           # %{event, offset, span}            this.handleEvent("e", ...)
             window_listeners: []   # %{event, span}                    window.addEventListener("phx:e", ...)

@@ -42,22 +42,14 @@ defmodule Soundcheck.Elixir.ModuleIndex do
             file: Path.t(),
             span: Span.t(),
             kind: kind(),
-            uses: [%{module: module() | Macro.t(), args: [Macro.t()], line: pos_integer()}],
+            uses: [Soundcheck.Elixir.ModuleIndex.Use.t()],
             aliases: %{atom() => module()},
             imports: [module()],
-            embed_templates: [
-              %{
-                pattern: String.t(),
-                root: String.t() | nil,
-                suffix: String.t(),
-                line: pos_integer(),
-                column: pos_integer()
-              }
-            ],
+            embed_templates: [Soundcheck.Elixir.ModuleIndex.EmbedTemplates.t()],
             functions: %{{atom(), arity()} => [Soundcheck.Elixir.ModuleIndex.Clause.t()]},
             components: %{atom() => Soundcheck.Elixir.ModuleIndex.declarations()},
             templates: [Template.t()],
-            live_routes: [%{path: String.t(), line: pos_integer(), column: pos_integer()}],
+            live_routes: [Soundcheck.Elixir.ModuleIndex.LiveRoute.t()],
             on_mount: [Soundcheck.Elixir.ModuleIndex.hook()]
           }
   end
@@ -106,10 +98,58 @@ defmodule Soundcheck.Elixir.ModuleIndex do
     @type t :: %__MODULE__{module: module() | Macro.t(), arg: term(), span: Soundcheck.Span.t()}
   end
 
+  defmodule Declarations do
+    @moduledoc false
+    # The `attr` and `slot` declarations of one function component, in
+    # source order. `line` is the line of the first one; it is `nil` only
+    # while `Soundcheck.Elixir.ModuleIndex` has collected none yet.
+    defstruct attrs: [], slots: [], line: nil
+
+    @type t :: %__MODULE__{
+            attrs: [Soundcheck.Elixir.ModuleIndex.Declaration.t()],
+            slots: [Soundcheck.Elixir.ModuleIndex.Declaration.t()],
+            line: pos_integer() | nil
+          }
+  end
+
+  defmodule Use do
+    @moduledoc false
+    # One `use` call. `module` is the expanded alias, or the AST when the
+    # target is not an alias.
+    @enforce_keys [:module, :args, :line]
+    defstruct [:module, :args, :line]
+
+    @type t :: %__MODULE__{module: module() | Macro.t(), args: [Macro.t()], line: pos_integer()}
+  end
+
+  defmodule EmbedTemplates do
+    @moduledoc false
+    # One `embed_templates` call with a literal pattern and literal options.
+    @enforce_keys [:pattern, :root, :suffix, :line, :column]
+    defstruct [:pattern, :root, :suffix, :line, :column]
+
+    @type t :: %__MODULE__{
+            pattern: String.t(),
+            root: String.t() | nil,
+            suffix: String.t(),
+            line: pos_integer(),
+            column: pos_integer()
+          }
+  end
+
+  defmodule LiveRoute do
+    @moduledoc false
+    # One `live` call in a router. `path` includes the prefixes of the
+    # scopes around the call.
+    @enforce_keys [:path, :line, :column]
+    defstruct [:path, :line, :column]
+
+    @type t :: %__MODULE__{path: String.t(), line: pos_integer(), column: pos_integer()}
+  end
+
   @type declaration :: Declaration.t()
   @type hook :: Hook.t()
-
-  @type declarations :: %{attrs: [declaration()], slots: [declaration()], line: pos_integer()}
+  @type declarations :: Declarations.t()
 
   @kinds %{
     Phoenix.LiveView => :live_view,
@@ -325,16 +365,16 @@ defmodule Soundcheck.Elixir.ModuleIndex do
 
   defp uses(scoped) do
     for {{:use, meta, [target | args]}, env} <- scoped do
-      %{module: expand_in(target, env), args: args, line: meta[:line]}
+      %Use{module: expand_in(target, env), args: args, line: meta[:line]}
     end
   end
 
   defp kind(uses) do
     Enum.find_value(uses, :other, fn
-      %{module: module, args: [kind | _]} when is_atom(module) and is_atom(kind) ->
+      %Use{module: module, args: [kind | _]} when is_atom(module) and is_atom(kind) ->
         Map.get(@kinds, module) || Map.get(@use_kinds, kind)
 
-      %{module: module} when is_atom(module) ->
+      %Use{module: module} when is_atom(module) ->
         Map.get(@kinds, module)
 
       _use ->
@@ -349,7 +389,13 @@ defmodule Soundcheck.Elixir.ModuleIndex do
     for {:embed_templates, meta, [pattern | rest]} <- statements,
         is_binary(pattern),
         {:ok, root, suffix} <- [embed_options(rest)] do
-      %{pattern: pattern, root: root, suffix: suffix, line: meta[:line], column: meta[:column]}
+      %EmbedTemplates{
+        pattern: pattern,
+        root: root,
+        suffix: suffix,
+        line: meta[:line],
+        column: meta[:column]
+      }
     end
   end
 
@@ -376,7 +422,7 @@ defmodule Soundcheck.Elixir.ModuleIndex do
   defp live_declarations(statements, prefix) do
     Enum.flat_map(statements, fn
       {:live, meta, [path | _]} when is_binary(path) ->
-        [%{path: join_path(prefix, path), line: meta[:line], column: meta[:column]}]
+        [%LiveRoute{path: join_path(prefix, path), line: meta[:line], column: meta[:column]}]
 
       {block_form, _, args} when is_atom(block_form) and is_list(args) ->
         case do_block(args) do
@@ -459,7 +505,7 @@ defmodule Soundcheck.Elixir.ModuleIndex do
   # accumulate in reverse and are put back in source order at the end.
 
   defp functions(statements) do
-    initial = {%{}, %{}, %{attrs: [], slots: [], line: nil}}
+    initial = {%{}, %{}, %Declarations{}}
 
     {functions, components, _pending} =
       Enum.reduce(statements, initial, fn statement, {functions, components, pending} ->
@@ -532,7 +578,7 @@ defmodule Soundcheck.Elixir.ModuleIndex do
             components
           end
 
-        {functions, components, %{attrs: [], slots: [], line: nil}}
+        {functions, components, %Declarations{}}
 
       nil ->
         {functions, components, pending}

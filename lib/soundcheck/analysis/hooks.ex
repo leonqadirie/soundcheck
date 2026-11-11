@@ -35,11 +35,22 @@ defmodule Soundcheck.Analysis.Hooks do
           {:socket, Facts.t(), Extractor.ref()}
           | {:colocated, Template.t(), Facts.t()}
 
-  @type registry :: %{
-          socket?: boolean(),
-          names: %{String.t() => definition()},
-          open: [term()]
-        }
+  defmodule Registry do
+    @moduledoc false
+    # The hooks the project registers with `LiveSocket`, by name. `socket?`
+    # is `false` when no JavaScript file constructs a `LiveSocket`; `open`
+    # lists the reasons the names may be incomplete.
+    @enforce_keys [:socket?]
+    defstruct [:socket?, names: %{}, open: []]
+
+    @type t :: %__MODULE__{
+            socket?: boolean(),
+            names: %{String.t() => Soundcheck.Analysis.Hooks.definition()},
+            open: [term()]
+          }
+  end
+
+  @type registry :: Registry.t()
 
   defmodule Usage do
     @moduledoc false
@@ -64,8 +75,8 @@ defmodule Soundcheck.Analysis.Hooks do
     by_path = Map.new(js, &{Path.expand(&1.file), &1})
     colocated = colocated(graph)
 
-    Enum.reduce(sockets, %{socket?: sockets != [], names: %{}, open: []}, fn facts, acc ->
-      %{names: names, open: open} = Extractor.registry(facts)
+    Enum.reduce(sockets, %Registry{socket?: sockets != []}, fn facts, acc ->
+      %Extractor.Names{names: names, open: open} = Extractor.registry(facts)
       acc = add_names(acc, facts, names)
       Enum.reduce(open, acc, &resolve_open(&1, facts, &2, by_path, colocated))
     end)
@@ -76,7 +87,7 @@ defmodule Soundcheck.Analysis.Hooks do
   when its definition does not resolve to an object literal.
   """
   @spec events(Graph.t(), definition()) ::
-          {:ok, %{pushes: [Extractor.push()], handles: [Extractor.handle()]}} | :unknown
+          {:ok, Extractor.hook_events()} | :unknown
   def events(_graph, {:colocated, _template, facts}) do
     case facts.exports do
       %{default: {:object, id}} -> {:ok, Extractor.events_in(facts, id)}
@@ -180,7 +191,7 @@ defmodule Soundcheck.Analysis.Hooks do
          _colocated
        ) do
     with {:ok, target} <- import_target(facts.file, source, by_path),
-         {:ok, %{names: names, open: open}} <- imported_names(target, imported) do
+         {:ok, %Extractor.Names{names: names, open: open}} <- imported_names(target, imported) do
       acc = add_names(acc, target, names)
       %{acc | open: Enum.uniq(acc.open ++ open)}
     else

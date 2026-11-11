@@ -12,7 +12,21 @@ defmodule Soundcheck.Runner do
   alias Soundcheck.Graph.Input
   alias Soundcheck.Suppression
 
-  @type result :: %{diagnostics: [Diagnostic.t()], graph: Graph.summary(), unparsable: [Path.t()]}
+  defmodule Result do
+    @moduledoc false
+    # One run's findings, sorted by location, the graph's size, and the
+    # source files that did not parse.
+    @enforce_keys [:diagnostics, :graph, :unparsable]
+    defstruct [:diagnostics, :graph, :unparsable]
+
+    @type t :: %__MODULE__{
+            diagnostics: [Soundcheck.Diagnostic.t()],
+            graph: Soundcheck.Graph.summary(),
+            unparsable: [Path.t()]
+          }
+  end
+
+  @type result :: Result.t()
 
   @doc """
   Options:
@@ -52,7 +66,7 @@ defmodule Soundcheck.Runner do
         diagnostic
       end
 
-    %{
+    %Result{
       diagnostics:
         diagnostics
         |> Suppression.reject()

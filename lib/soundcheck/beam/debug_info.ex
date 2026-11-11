@@ -28,7 +28,20 @@ defmodule Soundcheck.Beam.DebugInfo do
   @type definition ::
           {{name :: atom(), arity()}, :def | :defp | :defmacro | :defmacrop, keyword(),
            [clause()]}
-  @type info :: %{file: Path.t(), definitions: [definition()]}
+
+  defmodule Info do
+    @moduledoc false
+    # A compiled module's source file and macro-expanded definitions.
+    @enforce_keys [:file, :definitions]
+    defstruct [:file, :definitions]
+
+    @type t :: %__MODULE__{
+            file: Path.t(),
+            definitions: [Soundcheck.Beam.DebugInfo.definition()]
+          }
+  end
+
+  @type info :: Info.t()
   @type error :: :not_loadable | :no_debug_info
 
   @doc "Returns the module's source file and expanded definitions."
@@ -42,7 +55,7 @@ defmodule Soundcheck.Beam.DebugInfo do
   """
   @spec clauses(module(), atom(), arity()) :: {:ok, [clause()]} | {:error, error()}
   def clauses(module, name, arity) do
-    with {:ok, %{definitions: definitions}} <- definitions(module) do
+    with {:ok, %Info{definitions: definitions}} <- definitions(module) do
       {:ok,
        Enum.find_value(definitions, [], fn
          {{^name, ^arity}, _kind, _meta, clauses} -> clauses
@@ -65,7 +78,7 @@ defmodule Soundcheck.Beam.DebugInfo do
            :beam_lib.chunks(binary, [:debug_info]),
          {:ok, %{definitions: definitions, file: file}} <-
            backend.debug_info(:elixir_v1, module, data, []) do
-      {:ok, %{file: file, definitions: definitions}}
+      {:ok, %Info{file: file, definitions: definitions}}
     else
       _ -> {:error, :no_debug_info}
     end

@@ -9,7 +9,16 @@ defmodule Soundcheck.Heex.Reads do
   alias Soundcheck.Heex.Template
   alias Soundcheck.Span
 
-  @type read :: %{key: atom(), span: Span.t()}
+  defmodule Read do
+    @moduledoc false
+    # One `@key` read. The span covers `@` and the key.
+    @enforce_keys [:key, :span]
+    defstruct [:key, :span]
+
+    @type t :: %__MODULE__{key: atom(), span: Span.t()}
+  end
+
+  @type read :: Read.t()
 
   @spec assigns(Template.t()) :: [read()]
   def assigns(%Template{file: file} = template),
@@ -97,6 +106,6 @@ defmodule Soundcheck.Heex.Reads do
     column = meta[:column]
     # `@` plus the key name
     stop = column + 1 + String.length(Atom.to_string(key))
-    %{key: key, span: Span.new(file, {line, column}, {line, stop})}
+    %Read{key: key, span: Span.new(file, {line, column}, {line, stop})}
   end
 end

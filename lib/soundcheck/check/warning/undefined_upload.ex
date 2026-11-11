@@ -43,7 +43,7 @@ defmodule Soundcheck.Check.Warning.UndefinedUpload do
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
 
-  @uploads %{
+  @uploads %SocketNames.Spec{
     assign: :uploads,
     defining: [:allow_upload],
     using: [:consume_uploaded_entries, :uploaded_entries, :cancel_upload, :disallow_upload]
@@ -51,7 +51,13 @@ defmodule Soundcheck.Check.Warning.UndefinedUpload do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    for %{entry: entry, name: name, defined: defined, span: span, anchor: anchor} <-
+    for %SocketNames.Undefined{
+          entry: entry,
+          name: name,
+          defined: defined,
+          span: span,
+          anchor: anchor
+        } <-
           SocketNames.undefined(graph, @uploads) do
       Diagnostic.new(
         __MODULE__,
