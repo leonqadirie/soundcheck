@@ -1,0 +1,16 @@
+[files]
+extend-exclude = ["CHANGELOG.md"]
+
+[default.extend-words]
+# Intentional misspellings in the rule examples and the suggestion tests,
+# which demonstrate edit-distance suggestions ("sav" -> "save",
+# "InfiniteScrol" -> "InfiniteScroll", "copyed" -> "copied", transposed
+# "svae" and "mroe"), and the bugs injected into tunez for the recall check
+# ("add-trak", "trackSrot").
+sav = "sav"
+Scrol = "Scrol"
+svae = "svae"
+mroe = "mroe"
+copyed = "copyed"
+trak = "trak"
+Srot = "Srot"

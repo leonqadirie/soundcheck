@@ -22,3 +22,27 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 soundcheck-*.tar
 
+
+# Ignoring Elixir Language Servers
+.elixir_ls/
+.expert/
+
+# AI artefacts
+*CLAUDE.md
+*AGENTS.md
+*.claude/
+*.codex/
+
+# Reports
+reach_report
+
+# Taskfile checksum cache
+.task/
+
+# Dialyzer PLTs (cached in CI)
+/priv/plts/
+
+# Benchmark project build output and generated corpus
+/bench/_build/
+/bench/deps/
+/bench/corpus/

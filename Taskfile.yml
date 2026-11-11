@@ -1,0 +1,118 @@
+# https://taskfile.dev
+version: "3"
+
+tasks:
+  default:
+    desc: List the available tasks
+    cmds:
+      - task --list --sort none
+    silent: true
+
+  ci:
+    desc: Run the CI checks that work locally (typos, deps audit, test, lint)
+    cmds:
+      - task: typos
+      - task: deps:audit
+      - task: test:clean
+      - task: lint
+
+  bench:
+    desc: Benchmark soundcheck against the generated corpus; pass --save TAG, --compare TAG, --only GROUP, --size SIZE after --
+    dir: bench
+    deps: [bench:gen]
+    cmds:
+      # bench/mix.lock and SOUNDCHECK_PATH can change between runs, so every
+      # run fetches; the fetch is a no-op when nothing changed.
+      - mix deps.get
+      # soundcheck compiles against Credo, so the other deps compile first;
+      # on a fresh bench/deps the forced recompile below fails otherwise.
+      - mix deps.compile
+      # A forced recompile keeps a checkout or SOUNDCHECK_PATH switch from
+      # benchmarking stale soundcheck beams.
+      - mix deps.compile soundcheck --force
+      - mix compile
+      - mix bench {{.CLI_ARGS}}
+
+  bench:checks:
+    desc: Benchmark each check's analyze/2 over a prebuilt graph; pass extra mix bench args after --
+    cmds:
+      - task: bench
+        vars:
+          CLI_ARGS: --only checks {{.CLI_ARGS}}
+
+  bench:gen:
+    desc: Generate the synthetic LiveView corpus the benchmarks analyze
+    dir: bench
+    cmds:
+      - elixir gen.exs
+    sources:
+      - gen.exs
+      - lib/bench.ex
+      - lib/bench/corpus.ex
+    generates:
+      - corpus/FINGERPRINT
+
+  deps:audit:
+    desc: Check dependencies for retired Hex packages
+    deps: [deps:get]
+    cmds:
+      - mix hex.audit
+
+  deps:get:
+    desc: Fetch Mix dependencies
+    cmds:
+      - mix deps.get
+    sources:
+      - mix.exs
+      - mix.lock
+
+  deps:outdated:
+    desc: List dependencies with newer Hex releases
+    deps: [deps:get]
+    cmds:
+      - mix hex.outdated
+
+  deps:update:
+    desc: Update all Mix dependencies to the newest versions mix.exs allows
+    cmds:
+      - mix deps.update --all
+
+  format:
+    desc: Format all Elixir sources
+    cmds:
+      - mix format
+
+  lint:
+    desc: Run the mix lint alias (format check, Credo, Reach, xref cycles, Dialyzer, docs)
+    deps: [deps:get]
+    cmds:
+      - mix lint
+
+  test:
+    desc: Run the test suite; pass extra mix test args after --
+    deps: [deps:get]
+    cmds:
+      - mix test {{.CLI_ARGS}}
+
+  test:clean:
+    desc: Recompile soundcheck from scratch, then run the test suite as CI does; pass extra mix test args after --
+    deps: [deps:get]
+    cmds:
+      - rm -rf _build/*/lib/soundcheck
+      - mix test {{.CLI_ARGS}}
+
+  typos:
+    desc: Check spelling with typos
+    preconditions:
+      - sh: command -v typos
+        msg: "typos is not installed: https://github.com/crate-ci/typos#install"
+    cmds:
+      - typos
+
+  verify:
+    desc: Format the sources, then check spelling, lint, and run the test suite
+    cmds:
+      - task: format
+      - task: typos
+      - task: lint
+      - task: test
