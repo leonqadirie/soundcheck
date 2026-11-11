@@ -50,9 +50,8 @@ defmodule Soundcheck.Graph do
   @default_js_paths ["assets/js"]
 
   @doc "Returns this run's graph, building it on first use."
-  @spec current(keyword()) :: t()
-  def current(opts \\ []),
-    do: Once.run_shared({__MODULE__, :current}, fn -> build(discover(), opts) end)
+  @spec current() :: t()
+  def current, do: Once.run_shared({__MODULE__, :current}, fn -> build(discover()) end)
 
   @doc """
   Makes `inputs` this run's graph unless one exists already. Called by
