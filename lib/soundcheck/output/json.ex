@@ -3,10 +3,11 @@ defmodule Soundcheck.Output.JSON do
   # Renders findings as a JSON array, one object per finding, with every location.
 
   alias Soundcheck.Diagnostic
+  alias Soundcheck.Output.Encoder
   alias Soundcheck.Span
 
   @spec render([Diagnostic.t()]) :: String.t()
-  def render(diagnostics), do: Jason.encode!(Enum.map(diagnostics, &to_map/1), pretty: true)
+  def render(diagnostics), do: diagnostics |> Enum.map(&to_map/1) |> Encoder.encode()
 
   @doc "The JSON-ready map for one finding."
   @spec to_map(Diagnostic.t()) :: map()

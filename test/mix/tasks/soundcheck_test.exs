@@ -41,7 +41,7 @@ defmodule Mix.Tasks.SoundcheckTest do
 
   test "reports findings, including JavaScript-only ones, and exits 1" do
     {status, output} = run_task(["--all", "--format", "json" | @fixture_args])
-    entries = Jason.decode!(output)
+    entries = JSON.decode!(output)
 
     assert status == 1
     assert "SC101" in Enum.map(entries, & &1["id"])
@@ -52,7 +52,7 @@ defmodule Mix.Tasks.SoundcheckTest do
 
   test "--only selects checks by id" do
     {_status, output} = run_task(["--only", "SC1002", "--format", "json" | @fixture_args])
-    assert output |> Jason.decode!() |> Enum.map(& &1["id"]) |> Enum.uniq() == ["SC1002"]
+    assert output |> JSON.decode!() |> Enum.map(& &1["id"]) |> Enum.uniq() == ["SC1002"]
   end
 
   test "exits 0 without findings" do
@@ -118,7 +118,7 @@ defmodule Mix.Tasks.SoundcheckTest do
     {_status, output} =
       run_task(["--format", "json", "--no-baseline", "--config-file", config | @fixture_args])
 
-    entries = Jason.decode!(output)
+    entries = JSON.decode!(output)
     messages = for %{"id" => "SC101", "message" => message} <- entries, do: message
 
     assert Enum.any?(messages, &(&1 =~ "incr"))
@@ -131,6 +131,6 @@ defmodule Mix.Tasks.SoundcheckTest do
     path = Path.join(tmp_dir, "soundcheck.sarif")
     _ = capture_io(fn -> run_task(["--format", "sarif", "--output", path | @fixture_args]) end)
 
-    assert %{"version" => "2.1.0"} = path |> File.read!() |> Jason.decode!()
+    assert %{"version" => "2.1.0"} = path |> File.read!() |> JSON.decode!()
   end
 end

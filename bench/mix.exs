@@ -8,7 +8,7 @@ defmodule Bench.MixProject do
     [
       app: :bench,
       version: "0.1.0",
-      elixir: "~> 1.17",
+      elixir: "~> 1.18",
       elixirc_paths: ["lib", "corpus"],
       deps: deps()
     ]
