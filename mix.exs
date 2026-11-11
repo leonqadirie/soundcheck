@@ -20,7 +20,9 @@ defmodule Soundcheck.MixProject do
       deps: deps(),
       dialyzer: dialyzer(),
       package: package(),
-      docs: docs()
+      docs: docs(),
+      source_url: "https://github.com/leonqadirie/soundcheck",
+      homepage_url: "https://github.com/leonqadirie/soundcheck"
     ]
   end
 
@@ -89,7 +91,8 @@ defmodule Soundcheck.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      files: ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* usage-rules.md)
+      files: ~w(lib .formatter.exs mix.exs README* LICENSE* CHANGELOG* usage-rules.md),
+      links: %{"GitHub" => "https://github.com/leonqadirie/soundcheck"}
     ]
   end
 
@@ -97,7 +100,7 @@ defmodule Soundcheck.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md"],
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
       filter_modules: &public_module?/2
     ]
   end

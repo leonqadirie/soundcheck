@@ -14,7 +14,7 @@ soundcheck reports only what it can prove. When it cannot resolve something, suc
 With [Igniter](https://hexdocs.pm/igniter):
 
 ```shell
-mix igniter.install soundcheck
+mix igniter.install soundcheck@0.1.0
 ```
 
 The installer adds the dependency (`only: [:dev, :test], runtime: false`), registers the plugin in `.credo.exs`, and adds a `lint` alias.
@@ -24,7 +24,7 @@ Manually, add the dependency:
 ```elixir
 def deps do
   [
-    {:soundcheck, "~> 0.1", only: [:dev, :test], runtime: false}
+    {:soundcheck, "~> 0.1.0", only: [:dev, :test], runtime: false}
   ]
 end
 ```
