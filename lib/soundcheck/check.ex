@@ -41,6 +41,7 @@ defmodule Soundcheck.Check do
   alias Soundcheck.Once
   alias Soundcheck.PathFilter
   alias Soundcheck.Rule
+  alias Soundcheck.Suppression
 
   @required_rule_options [:confidence, :tier, :default, :summary]
   @rule_options @required_rule_options ++ [:tier_note]
@@ -183,8 +184,13 @@ defmodule Soundcheck.Check do
   defp diagnostics(check, params) do
     check
     |> Rule.run(Graph.current(), params)
-    |> Rule.drop_silenced(baseline())
+    |> Rule.drop_silenced(baseline(), &directives/1)
   end
+
+  # Credo runs every check in the same run, and many report findings in the
+  # same files, so each file's suppression directives parse once per run.
+  defp directives(file),
+    do: Once.run({__MODULE__, :directives, file}, fn -> Suppression.file_directives(file) end)
 
   defp bucket(%Diagnostic{anchor: nil}), do: :unanchored
   defp bucket(%Diagnostic{anchor: anchor}), do: Path.expand(anchor.file)
