@@ -117,6 +117,24 @@ defmodule Soundcheck.Analysis.Hooks do
   defp object_of(_facts, _ref, _by_path, _depth), do: :error
 
   @doc """
+  Returns every event name the project's JavaScript listens for: literal
+  `handleEvent` calls in hooks (colocated ones included) and `phx:` window
+  listeners.
+  """
+  @spec listened_events(Graph.t(), registry()) :: MapSet.t(String.t())
+  def listened_events(%Graph{js: js}, registry) do
+    colocated = for {_name, {:colocated, _template, facts}} <- registry.names, do: facts
+
+    for facts <- js ++ colocated,
+        event <-
+          Enum.map(facts.handles, & &1.event) ++
+            Enum.map(facts.window_listeners, &{:literal, &1.event}),
+        {:literal, name} <- [event],
+        into: MapSet.new(),
+        do: name
+  end
+
+  @doc """
   Returns every `phx-hook` reference in the project's templates, keyword
   attributes (`tag(:span, phx_hook: "Clock")`) included.
   """

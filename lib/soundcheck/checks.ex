@@ -6,9 +6,13 @@ defmodule Soundcheck.Checks do
 
   @checks [
     Soundcheck.Check.Design.UnusedEventHandler,
+    Soundcheck.Check.Design.UnusedHook,
     Soundcheck.Check.Warning.EventPayloadMismatch,
     Soundcheck.Check.Warning.LiveViewCallbackInComponent,
-    Soundcheck.Check.Warning.UnhandledEvent
+    Soundcheck.Check.Warning.UnhandledEvent,
+    Soundcheck.Check.Warning.UnhandledHookEvent,
+    Soundcheck.Check.Warning.UnhandledServerPushEvent,
+    Soundcheck.Check.Warning.UndefinedHook
   ]
 
   @doc "The `checks: %{extra: [...]}` entries for the plugin's default Credo config."
