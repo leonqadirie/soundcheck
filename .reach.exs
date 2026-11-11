@@ -120,7 +120,7 @@
       # the .credo.exs reader is a leaf
       config: [],
       # the standalone runner builds the graph and runs checks outside Credo
-      runner: [:graph, :model, :registry, :filters],
+      runner: [:graph, :model, :registry, :filters, :orchestration],
       # renderers format diagnostics; they call check callbacks dynamically
       output: [:model],
       # the graph is assembled from the front ends, once per run

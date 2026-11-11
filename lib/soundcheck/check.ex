@@ -40,7 +40,7 @@ defmodule Soundcheck.Check do
   alias Soundcheck.Graph
   alias Soundcheck.Once
   alias Soundcheck.PathFilter
-  alias Soundcheck.Suppression
+  alias Soundcheck.Rule
 
   @required_rule_options [:confidence, :tier, :default, :summary]
   @rule_options @required_rule_options ++ [:tier_note]
@@ -181,12 +181,9 @@ defmodule Soundcheck.Check do
   end
 
   defp diagnostics(check, params) do
-    Graph.current()
-    |> check.analyze(params)
-    |> Diagnostic.normalize()
-    |> Enum.reject(&(Diagnostic.unverifiable?(&1) and not Keyword.fetch!(params, :strict)))
-    |> Suppression.reject()
-    |> Baseline.reject(baseline())
+    check
+    |> Rule.run(Graph.current(), params)
+    |> Rule.drop_silenced(baseline())
   end
 
   defp bucket(%Diagnostic{anchor: nil}), do: :unanchored
