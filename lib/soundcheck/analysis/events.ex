@@ -530,6 +530,16 @@ defmodule Soundcheck.Analysis.Events do
   defp conditions({template, span}), do: Guards.conditions(template.root, span)
   defp conditions(nil), do: []
 
+  @doc """
+  The LiveViews that render LiveComponent `module`, along every render
+  path, given the index from `Soundcheck.Analysis.Components.render_index/1`.
+  """
+  @spec parent_views(module(), Components.Index.t()) :: receivers()
+  def parent_views(module, index) do
+    with {:ok, reach} <- via_sites({:live_component, module}, nil, index, MapSet.new(), false),
+         do: {:ok, reach |> Map.keys() |> Enum.sort()}
+  end
+
   # A callee whose every call site rules out the guards around `location`,
   # and that no function delegates to, renders nowhere, so nothing receives
   # from it. A hop that does not prove every condition around `location`

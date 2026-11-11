@@ -5,12 +5,17 @@ defmodule Soundcheck.Checks do
   # check's `default?/0`, so they cannot drift apart.
 
   @checks [
+    Soundcheck.Check.Consistency.Configuration,
     Soundcheck.Check.Design.UnusedEventHandler,
     Soundcheck.Check.Design.UnusedHook,
+    Soundcheck.Check.Warning.CrashingMatchInCallback,
     Soundcheck.Check.Warning.EventPayloadMismatch,
+    Soundcheck.Check.Warning.InvalidSendUpdate,
     Soundcheck.Check.Warning.LiveViewCallbackInComponent,
     Soundcheck.Check.Warning.UnhandledEvent,
     Soundcheck.Check.Warning.UnhandledHookEvent,
+    Soundcheck.Check.Warning.UnhandledAsyncResult,
+    Soundcheck.Check.Warning.UnhandledInfoMessage,
     Soundcheck.Check.Warning.UnhandledServerPushEvent,
     Soundcheck.Check.Warning.UndefinedHook
   ]

@@ -126,6 +126,14 @@ defmodule Soundcheck.Beam.Introspect do
     end
   end
 
+  @doc """
+  Returns `true` when Phoenix LiveView is loadable in the VM running the
+  analysis, which requires the host project's dependencies to be compiled.
+  """
+  @spec live_view_available?() :: boolean()
+  def live_view_available?,
+    do: Once.run({__MODULE__, :live_view_available?}, fn -> loaded?(Phoenix.LiveView) end)
+
   @doc "Returns the public functions `module` exports, from `__info__/1`."
   @spec functions(module()) :: {:ok, MapSet.t({atom(), arity()})} | {:error, :not_loadable}
   def functions(module) do

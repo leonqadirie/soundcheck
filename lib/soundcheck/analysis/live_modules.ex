@@ -1,7 +1,12 @@
 defmodule Soundcheck.Analysis.LiveModules do
   @moduledoc false
+  # Pairs the graph's source-indexed modules with what their compiled form
+  # says they are.
+
+  alias Soundcheck.Analysis.Handlers.HandlerSet
   alias Soundcheck.Analysis.Handlers.Sender
   alias Soundcheck.Beam.Introspect
+  alias Soundcheck.Diagnostic
   alias Soundcheck.Elixir.ModuleIndex
   alias Soundcheck.Elixir.ModuleIndex.Entry
   alias Soundcheck.Graph
@@ -51,5 +56,21 @@ defmodule Soundcheck.Analysis.LiveModules do
       _node ->
         nil
     end)
+  end
+
+  @doc "Formats a message term as source text: `:tick` or `{:loaded, ...}`."
+  @spec describe(term()) :: String.t()
+  def describe({:atom, atom}), do: inspect(atom)
+  def describe({:tagged, tag, _size}), do: "{#{inspect(tag)}, ...}"
+
+  @doc """
+  Builds the diagnostic for a sender whose message no handler accepts:
+  resolved against a closed handler set, unverifiable otherwise.
+  """
+  @spec unhandled(module(), Entry.t(), Sender.t(), HandlerSet.t(), String.t()) :: Diagnostic.t()
+  def unhandled(rule, entry, sender, handler_set, message) do
+    span = span(entry, sender)
+
+    Diagnostic.new(rule, span, message, resolution: HandlerSet.resolution(handler_set))
   end
 end
