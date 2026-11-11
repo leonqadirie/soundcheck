@@ -1,25 +1,33 @@
-# soundcheck
+# Soundcheck
 
-soundcheck is a Credo plugin that catches Phoenix LiveView bugs living between files: a template emits an event no handler accepts, a hook pushes an event its LiveView ignores, a `start_async` result has nowhere to land. It links callbacks, HEEx templates, and JavaScript hooks into one model per run and checks the contracts between them.
+Soundcheck is a [Credo](https://github.com/rrrene/credo) plugin for Phoenix LiveView. It finds bugs by checking how callbacks, HEEx templates, and JavaScript hooks work together: an event with no handler, an async task with no result callback, or an assign missing from the first render.
+
+Some checks analyse source code directly. Others read compiled modules to resolve event handlers, components, routes, and mount hooks across files.
 
 > [!WARNING]
 > This project is experimental and might break frequently.
 
-The name comes from the check musicians run before going live.
+A set of high-confidence checks runs by default. All other checks are opt-in; the [checks table](#checks) lists which are enabled. When Soundcheck cannot resolve a dynamic value or external hook, it can report an **unverifiable** finding. These findings appear only when you enable Soundcheck's `strict` parameter or pass `mix soundcheck --strict`.
 
-soundcheck reports only what it can prove. When it cannot resolve something, such as `phx-click={@action}` or a hook registered by an npm package, it marks the finding unverifiable and shows it only in strict mode.
+The name comes from the check musicians run before going live.
 
 ## Installation
 
-With [Igniter](https://hexdocs.pm/igniter):
+Supported versions: Elixir 1.17 or later, Phoenix 1.7 and 1.8, LiveView 1.1 and 1.2, and Credo 1.7.
+
+### With Igniter
+
+If your project uses [Igniter](https://hexdocs.pm/igniter), run:
 
 ```shell
 mix igniter.install soundcheck@0.1.0
 ```
 
-The installer adds the dependency (`only: [:dev, :test], runtime: false`), registers the plugin in `.credo.exs`, and adds a `lint` alias.
+The installer adds Soundcheck as a dependency with `only: [:dev, :test], runtime: false`, registers the plugin in `.credo.exs`, and adds a `lint` alias that compiles before running Credo. If you already have a `lint` alias, the installer leaves it as it is; make sure it runs `compile` before `credo`.
 
-Manually, add the dependency:
+### Manual
+
+Add Soundcheck to your dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -29,7 +37,13 @@ def deps do
 end
 ```
 
-and register the plugin in `.credo.exs`:
+Fetch the dependency:
+
+```shell
+mix deps.get
+```
+
+Then add the plugin to your existing `.credo.exs` configuration:
 
 ```elixir
 %{
@@ -42,19 +56,33 @@ and register the plugin in `.credo.exs`:
 }
 ```
 
-## Compile before running Credo
+### Running with Credo
 
-Semantic checks read compiled modules: handler clauses from each module's debug info, `on_mount` hooks, and the components each template renders. Run `mix compile` before `mix credo`, for example through an alias:
+Compile your project before running Credo:
+
+```shell
+mix compile
+mix credo
+```
+
+For a repeatable workflow, add a Mix alias:
 
 ```elixir
+# mix.exs
 defp aliases do
   [lint: ["compile", "credo --strict"]]
 end
 ```
 
-Without a compiled project, the Configuration check (SC000) reports why semantic checks skipped a module, and the other semantic checks stay silent. Syntactic checks work on uncompiled code.
+Then run `mix lint`. Credo's `--strict` option controls Credo's reporting; to include Soundcheck's unverifiable findings, set `strict: true` on the relevant checks in `.credo.exs`.
+
+**Checks marked semantic require a compiled project.** They read handler clauses from module debug info, resolve `on_mount` hooks, and identify the components each template renders. If a module cannot be analysed, the Configuration check (SC000) reports the reason and the affected semantic checks stay silent. Checks marked syntactic work without compiling.
 
 ## Checks
+
+- **Default:** `on` checks run automatically; `off` checks must be enabled in [Configuration](#configuration).
+- **Tier:** syntactic checks read source code; semantic checks also read compiled modules.
+- **Confidence:** how certain the check is about the pattern it detects.
 
 | ID | Check | Category | Default | Tier | Confidence | What it catches |
 |---|---|---|---|---|---|---|
@@ -109,9 +137,55 @@ Without a compiled project, the Configuration check (SC000) reports why semantic
 | SC1002 | `Soundcheck.Check.Design.UnusedHook` | design | off | syntactic | medium | Hooks registered with `LiveSocket` that no template uses; Credo reports these against the JavaScript file |
 | SC1003 | `Soundcheck.Check.Warning.HookWithoutId` | warning | on | syntactic | high | HTML elements with `phx-hook` but no `id`, whose hook LiveView never mounts |
 
-`mix credo explain <file>:<line>` shows each check's full explanation with before/after examples.
+Use `mix credo explain <file>:<line>` for a check's full explanation and before/after examples.
 
-Enable every opt-in check:
+## Running with `mix soundcheck`
+
+The standalone task compiles your project and runs the same checks, with text, JSON, or SARIF output. It shows every location involved in a finding, including exact locations in HEEx and JavaScript files. SARIF output includes related locations for code scanning.
+
+```shell
+mix soundcheck                      # default checks, plus .credo.exs overrides
+mix soundcheck --all --strict       # every check, including unverifiable findings
+mix soundcheck --only SC101,SC1002   # selected checks
+mix soundcheck --format sarif --output soundcheck.sarif
+```
+
+Example output:
+
+```text
+SC101 warning: `phx-click="add-trak"` has no matching `handle_event/3` clause in `MyAppWeb.AlbumLive`.
+   --> lib/my_app_web/live/album_live.ex:127:30
+    |
+127 |     <.button phx-click="add-trak">Add track</.button>
+    |                        ^^^^^^^^
+   = help: Did you mean "add-track"?
+```
+
+The task reads check parameters, enabled and disabled checks, and the plugin's `js_paths` from `.credo.exs`. `--all` and `--only` override check selection while retaining configured parameters. It exits with status 1 if it reports any finding that is not unverifiable.
+
+### Command options
+
+| Option | Meaning |
+|---|---|
+| `--all` | Run every check, including opt-in checks |
+| `--only SC101,SC1002` | Run only the listed rule IDs |
+| `--strict` | Include unverifiable findings |
+| `--format text\|json\|sarif` | Output format; defaults to `text` |
+| `--output FILE` | Write output to a file instead of standard output |
+| `--path GLOB` | Elixir source glob; repeatable; defaults to `lib/**/*.ex` |
+| `--js-path DIR` | JavaScript source directory; repeatable; overrides configured `js_paths` |
+| `--config-file FILE` | Credo configuration file; defaults to `.credo.exs` |
+| `--config-name NAME` | Named Credo configuration; defaults to `default` |
+| `--no-compile` | Use the existing build without recompiling |
+| `--baseline FILE` | Use a specific baseline file |
+| `--no-baseline` | Report findings even if they are in the baseline |
+| `--write-baseline` | Record current findings in the baseline and exit with status 0 |
+
+## Configuration
+
+### Enabling and disabling checks
+
+Add opt-in checks to `checks.extra` in `.credo.exs`. Use `false` to disable a check, or a keyword list to enable it with parameters:
 
 ```elixir
 %{
@@ -121,28 +195,14 @@ Enable every opt-in check:
       plugins: [{Soundcheck, []}],
       checks: %{
         extra: [
-          {Soundcheck.Check.Design.UnreadAssign, []},
+          # Enable an opt-in check
           {Soundcheck.Check.Design.UnusedEventHandler, []},
-          {Soundcheck.Check.Warning.OptionalAttrWithoutDefault, []},
-          {Soundcheck.Check.Warning.PossiblyUnsetAssign, []},
-          {Soundcheck.Check.Readability.AssignsDotAccess, []},
-          {Soundcheck.Check.Refactor.BareAssignsInTemplate, []},
-          {Soundcheck.Check.Refactor.TemplateBoundVariable, []},
-          {Soundcheck.Check.Refactor.StreamCandidate, []},
-          {Soundcheck.Check.Refactor.TemporaryAssignCandidate, []},
-          {Soundcheck.Check.Refactor.ExpensiveCallInTemplate, []},
-          {Soundcheck.Check.Refactor.ExpensiveMountWork, []},
-          {Soundcheck.Check.Refactor.FormForChangeset, []},
-          {Soundcheck.Check.Refactor.NavigateAcrossLiveSession, []},
-          {Soundcheck.Check.Refactor.ChangeWithoutDebounce, []},
-          {Soundcheck.Check.Design.ClickOnNonInteractiveElement, []},
-          {Soundcheck.Check.Warning.BlockingCallInHandler, []},
-          {Soundcheck.Check.Warning.FormFieldMismatch, []},
-          {Soundcheck.Check.Warning.LiveRouteWithoutAuthHook, []},
-          {Soundcheck.Check.Warning.UnhandledHookEvent, []},
-          {Soundcheck.Check.Warning.UnhandledInfoMessage, []},
-          {Soundcheck.Check.Warning.UnhandledServerPushEvent, []},
-          {Soundcheck.Check.Warning.UnscopedLookupByClientParam, []}
+
+          # Customise an enabled check
+          {Soundcheck.Check.Warning.UnhandledEvent, [ignore_events: [~r/^analytics-/]]},
+
+          # Disable a default check
+          {Soundcheck.Check.Warning.UndefinedHook, false}
         ]
       }
     }
@@ -150,31 +210,92 @@ Enable every opt-in check:
 }
 ```
 
-## Full output: `mix soundcheck`
+To enable every opt-in check in Credo, use the following `checks` section. Default checks need no additional entries. For a standalone run, use `mix soundcheck --all`.
 
-Credo shows each finding at one location. `mix soundcheck` shows every location a finding involves (template, handler, JavaScript), with line numbers for findings that live only in JavaScript, and writes SARIF with related locations for code scanning:
-
-```shell
-mix soundcheck                      # default checks, text output
-mix soundcheck --all --strict       # every check, unverifiable findings too
-mix soundcheck --only SC101,SC1002
-mix soundcheck --format sarif --output soundcheck.sarif
+```elixir
+checks: %{
+  extra: [
+    {Soundcheck.Check.Design.ClickOnNonInteractiveElement, []},
+    {Soundcheck.Check.Design.UnreadAssign, []},
+    {Soundcheck.Check.Design.UnusedEventHandler, []},
+    {Soundcheck.Check.Design.UnusedHook, []},
+    {Soundcheck.Check.Readability.AssignsDotAccess, []},
+    {Soundcheck.Check.Refactor.BareAssignsInTemplate, []},
+    {Soundcheck.Check.Refactor.ChangeWithoutDebounce, []},
+    {Soundcheck.Check.Refactor.ExpensiveCallInTemplate, []},
+    {Soundcheck.Check.Refactor.ExpensiveMountWork, []},
+    {Soundcheck.Check.Refactor.FormForChangeset, []},
+    {Soundcheck.Check.Refactor.NavigateAcrossLiveSession, []},
+    {Soundcheck.Check.Refactor.StreamCandidate, []},
+    {Soundcheck.Check.Refactor.TemplateBoundVariable, []},
+    {Soundcheck.Check.Refactor.TemporaryAssignCandidate, []},
+    {Soundcheck.Check.Warning.BlockingCallInHandler, []},
+    {Soundcheck.Check.Warning.CrashingMatchInCallback, []},
+    {Soundcheck.Check.Warning.EventPayloadMismatch, []},
+    {Soundcheck.Check.Warning.FormFieldMismatch, []},
+    {Soundcheck.Check.Warning.FormWithoutRecovery, []},
+    {Soundcheck.Check.Warning.LiveRouteWithoutAuthHook, []},
+    {Soundcheck.Check.Warning.OptionalAttrWithoutDefault, []},
+    {Soundcheck.Check.Warning.PossiblyUnsetAssign, []},
+    {Soundcheck.Check.Warning.UndefinedStream, []},
+    {Soundcheck.Check.Warning.UndefinedUpload, []},
+    {Soundcheck.Check.Warning.UnhandledHookEvent, []},
+    {Soundcheck.Check.Warning.UnhandledInfoMessage, []},
+    {Soundcheck.Check.Warning.UnhandledServerPushEvent, []},
+    {Soundcheck.Check.Warning.UnscopedLookupByClientParam, []}
+  ]
+}
 ```
 
-```
-SC101 warning: `phx-click="add-trak"` has no matching `handle_event/3` clause in `MyAppWeb.AlbumLive`.
-   --> lib/my_app_web/live/album_live.ex:127:30
-    |
-127 |     <.button phx-click="add-trak">Add track</.button>
-    |                        ^^^^^^^^
-   = help: Did you mean "add-track"?
+### JavaScript sources
+
+The plugin scans `assets/js` for `.js`, `.ts`, and `.mjs` hook sources by default. Set `js_paths` to scan other directories:
+
+```elixir
+plugins: [{Soundcheck, [js_paths: ["assets/js", "assets/vendor/hooks"]]}]
 ```
 
-The task compiles first and exits with status 1 when it reports a finding that is not unverifiable. It reads `.credo.exs` like `mix credo` does: checks listed there run with their params, `{Check, false}` turns a check off, and the plugin's `js_paths` applies. Options: `--format text|json|sarif`, `--output FILE`, `--all`, `--only IDS`, `--strict`, `--path GLOB`, `--js-path DIR`, `--config-file FILE`, `--config-name NAME`, `--baseline FILE`, `--no-baseline`, `--write-baseline`, `--no-compile`.
+### Shared check parameters
+
+Every check accepts:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `excluded_paths` | `[~r"/test/", "test"]` | Files to skip. Strings match whole path segments or full file paths; `"test"` skips `test/foo.ex`, but not `contest/foo.ex`. Regexes match the full filename. |
+| `strict` | `false` | Include unverifiable findings. For SC001, also require a reason in suppression comments. |
+
+### Check-specific parameters
+
+Check names below omit the `Soundcheck.Check.<Category>.` prefix. Defaults containing `...` are abbreviated; use `mix credo explain <file>:<line>` for the full check explanation.
+
+| Check | Param | Default | Meaning |
+|---|---|---|---|
+| `UnhandledEvent`, `UnusedEventHandler` | `ignore_events` | `[]` | Event names to skip: binaries (exact) or regexes |
+| `EventPayloadMismatch` | `metadata_keys` | `[]` | Keys added to click payloads by `LiveSocket` metadata callbacks |
+| `PossiblyUnsetAssign` | `assume_set` | `[:current_user, :current_scope, :flash, :live_action, :page_title]` | Keys the team's conventions guarantee before the first render |
+| `UnreadAssign` | `ignore_assigns` | `[:page_title]` | Keys never reported |
+| `UndeclaredComponentAttr` | `implicit_assigns` | `[:inner_block, :rest, :__changed__, :__given__]` | Assign keys never reported |
+| `UnguardedSubscribe`, `SubscribedWithoutHandleInfo` | `subscribe_functions` | `[~r/^Phoenix\.PubSub\.subscribe$/, ~r/\.subscribe$/]` | Subscribing functions, matched against `Module.function` with aliases expanded |
+| `ExpensiveCallInTemplate` | `expensive_modules`, `expensive_functions` | `[~r/\.Repo$/, ~r/^Ecto\.Query$/, ~r/^(Req\|Finch\|HTTPoison\|Tesla)$/]`, `[{Enum, :sort}, ...]` | Calls that count as expensive in templates |
+| `ExpensiveMountWork` | `expensive_modules` | `[~r/\.Repo$/, ~r/^(Req\|Finch\|HTTPoison\|Tesla)$/]` | Modules whose calls count as expensive in `mount/3` |
+| `BlockingCallInHandler` | `blocking_functions`, `blocking_modules` | `[{Process, :sleep}, {:timer, :sleep}, {Task, :await}, ...]`, `[~r/^(Req\|Finch\|HTTPoison\|Tesla)$/]` | Calls that block a handler |
+| `UnscopedLookupByClientParam` | `repo_modules`, `scope_assigns`, `authorizers`, `excluded_modules` | `[~r/\.Repo$/]`, `[:current_scope, :current_user]`, `[~r/authoriz/, ~r/permit/, ~r/can\?$/, ~r/allowed\?$/]`, `[~r/Admin/]` | Repos to watch; assigns and calls that count as scoping a clause; modules to skip |
+| `UnscopedLookupByClientParam` | `lookup_functions` | `[~r/\.get_\w+!?$/, ~r/\.fetch_\w+!?$/]` | Context lookup functions in project modules, matched against `Module.function` |
+| `LiveRouteWithoutAuthHook` | `auth_hooks`, `public_paths` | `:auto`, `[]` | Hook modules that authenticate (`:auto`: names containing `Auth`, once any route uses one); route paths that need none |
+| `NavigateAcrossLiveSession` | `ignore_sessions` | `[]` | live_session names to skip as origin or target |
+| `ChangeWithoutDebounce` | `input_types` | `["text", "search", "email", "textarea", "url", "tel"]` | Input types that count as text-like |
+| `ClickOnNonInteractiveElement` | `non_interactive_tags` | `~w(div span li td tr img p section article)` | Tags that are not interactive by default |
+| `UndefinedHook` | `external_hooks` | `[]` | Hook names registered by code Soundcheck cannot follow; listing any closes an open registry |
+
+For example, to include unverifiable event findings while ignoring analytics events:
+
+```elixir
+{Soundcheck.Check.Warning.UnhandledEvent, [ignore_events: [~r/^analytics-/], strict: true]}
+```
 
 ## Suppressing findings
 
-Fix the contract when you can. For a deliberate exception, add a `soundcheck:disable-*` comment with a reason. It works in Elixir, HEEx, and JavaScript, for `mix credo` and `mix soundcheck` alike:
+For an intentional exception, add a `soundcheck:disable-*` comment with a reason. Suppressions work in Elixir, HEEx, and JavaScript, with both `mix credo` and `mix soundcheck`.
 
 ```elixir
 # soundcheck:disable-next-line SC107 -- sent by a test helper
@@ -189,70 +310,49 @@ Fix the contract when you can. For a deliberate exception, add a `soundcheck:dis
 // soundcheck:disable-line UnusedHook -- mounted by the admin bundle
 ```
 
-`disable-next-line` covers the following line, `disable-line` its own line, and `disable-file` the whole file. Selectors are rule ids (`SC101`), family wildcards (`SC1xx`), or check names (`UnhandledEvent`), separated by commas or spaces. A comment covers a finding when it covers the finding's location or the line Credo reports it on. SC001 reports comments whose selectors match no rule and, with `strict: true`, comments without a reason.
+| Directive | Scope |
+|---|---|
+| `disable-next-line` | The following line |
+| `disable-line` | The comment's own line |
+| `disable-file` | The whole file |
+
+Selectors can be rule IDs (`SC101`), family wildcards (`SC1xx`), or check names (`UnhandledEvent`). Separate multiple selectors with commas or spaces. A suppression applies when it covers the finding's location or the line Credo reports it on.
+
+SC001 reports missing or unknown selectors. With `strict: true`, it also reports suppression comments without a reason.
 
 ## Adopting on an existing codebase
 
-Record today's findings in a baseline, and soundcheck reports only new ones, in `mix credo` and `mix soundcheck` alike:
+Use a baseline to record existing findings and report only new ones:
 
 ```shell
-mix soundcheck --all --write-baseline   # writes .soundcheck_baseline.exs
+mix soundcheck --all --write-baseline
 ```
 
-Commit the file. Fingerprints use the rule, file, and message, not line numbers, so edits elsewhere in a file keep a finding recorded; changing the finding itself makes it new. Rewrite the baseline after fixing findings to shrink it. `mix soundcheck --no-baseline` shows everything.
+Commit the generated `.soundcheck_baseline.exs`. Both `mix credo` and `mix soundcheck` use it automatically.
 
-## Configuration
+Baseline fingerprints use the rule, file, and message, so moving a finding to another line does not make it new. Changing the finding itself does. Run the baseline command again after fixing findings to remove resolved entries. A run narrowed with `--only` or `--path` preserves entries outside its scope.
 
-Plugin parameters:
-
-| Param | Default | Meaning |
-|---|---|---|
-| `js_paths` | `["assets/js"]` | Directories scanned for `.js`, `.ts`, and `.mjs` hook sources |
-
-```elixir
-plugins: [{Soundcheck, [js_paths: ["assets/js", "assets/vendor/hooks"]]}]
-```
-
-Every check takes:
-
-| Param | Default | Meaning |
-|---|---|---|
-| `excluded_paths` | `[~r"/test/", "test"]` | Files to skip. A binary matches whole path segments (`"test"` skips `test/foo.ex`, not `contest/foo.ex`); a regex matches the full filename. |
-| `strict` | `false` | Also report unverifiable findings. |
-
-Check-specific parameters:
-
-| Check | Param | Default | Meaning |
-|---|---|---|---|
-| `UnhandledEvent`, `UnusedEventHandler` | `ignore_events` | `[]` | Event names to skip: binaries (exact) or regexes |
-| `PossiblyUnsetAssign` | `assume_set` | `[:current_user, :current_scope, :flash, :live_action, :page_title]` | Keys the team's conventions guarantee before the first render |
-| `UnreadAssign` | `ignore_assigns` | `[:page_title]` | Keys never reported |
-| `UndeclaredComponentAttr` | `implicit_assigns` | `[:inner_block, :rest, :__changed__, :__given__]` | Assign keys never reported |
-| `UnguardedSubscribe`, `SubscribedWithoutHandleInfo` | `subscribe_functions` | `[~r/^Phoenix\.PubSub\.subscribe$/, ~r/\.subscribe$/]` | Subscribing functions, matched against `Module.function` with aliases expanded |
-| `ExpensiveCallInTemplate` | `expensive_modules`, `expensive_functions` | `[~r/\.Repo$/, ~r/^Ecto\.Query$/, ~r/^(Req\|Finch\|HTTPoison\|Tesla)$/]`, `[{Enum, :sort}, ...]` | Calls that count as expensive in templates |
-| `ExpensiveMountWork` | `expensive_modules` | `[~r/\.Repo$/, ~r/^(Req\|Finch\|HTTPoison\|Tesla)$/]` | Modules whose calls count as expensive in `mount/3` |
-| `BlockingCallInHandler` | `blocking_functions`, `blocking_modules` | `[{Process, :sleep}, {:timer, :sleep}, {Task, :await}, ...]`, `[~r/^(Req\|Finch\|HTTPoison\|Tesla)$/]` | Calls that block a handler |
-| `UnscopedLookupByClientParam` | `repo_modules`, `scope_assigns`, `authorizers`, `excluded_modules` | `[~r/\.Repo$/]`, `[:current_scope, :current_user]`, `[~r/authoriz/, ~r/permit/, ~r/can\?$/, ~r/allowed\?$/]`, `[~r/Admin/]` | Repos to watch; assigns and calls that count as scoping a clause; modules to skip |
-| `LiveRouteWithoutAuthHook` | `auth_hooks`, `public_paths` | `:auto`, `[]` | Hook modules that authenticate (`:auto`: names containing `Auth`, once any route uses one); route paths that need none |
-| `NavigateAcrossLiveSession` | `ignore_sessions` | `[]` | live_session names to skip as origin or target |
-| `ChangeWithoutDebounce` | `input_types` | `["text", "search", "email", "textarea", "url", "tel"]` | Input types that count as text-like |
-| `ClickOnNonInteractiveElement` | `non_interactive_tags` | `~w(div span li td tr img p section article)` | Tags that are not interactive by default |
-| `UndefinedHook` | `external_hooks` | `[]` | Hook names registered by code soundcheck cannot follow; listing any closes an open registry |
-
-Example:
-
-```elixir
-{Soundcheck.Check.Warning.UnhandledEvent, [ignore_events: [~r/^analytics-/], strict: true]}
-```
+Use `mix soundcheck --no-baseline` to see all findings, or `--baseline FILE` to use a different baseline file.
 
 ## How findings appear in Credo
 
-Credo reports each issue at one location, in an Elixir file unless the finding lives only in JavaScript. A finding inside a `~H` sigil points at the exact attribute. A finding inside a `.heex` file points at the owning module's `embed_templates` call (or `defmodule` for a colocated LiveView template), and its message starts with the template location. Hook findings point at the `phx-hook` attribute and name the JavaScript location in the message. A finding that lives only in JavaScript, such as an unused hook (SC1002), reports against the JavaScript file without a line number, and its message starts with `file:line:column`; `# credo:disable` comments cannot reach it, so use `// soundcheck:disable-next-line`. Each issue carries the full finding in `issue.meta[:soundcheck]`.
+Credo reports each finding at one location:
 
-## Supported versions
+| Finding location | Where Credo reports it |
+|---|---|
+| Inside a `~H` sigil | The exact attribute in the Elixir file |
+| In a `.heex` file | The owning module's `embed_templates` call, or `defmodule` for a colocated LiveView template; the message includes the template location |
+| A hook used by a template | The `phx-hook` attribute; the message includes the JavaScript location |
+| Only in JavaScript, such as an unused hook (SC1002) | The JavaScript file, without a line number; the message starts with `file:line:column` |
 
-Elixir 1.17 or later, Phoenix 1.7 and 1.8, LiveView 1.1 and 1.2, Credo 1.7.
+For JavaScript-only findings, use `// soundcheck:disable-next-line` to suppress them; Elixir `# credo:disable` comments cannot reach them. Each Credo issue carries the full finding in `issue.meta[:soundcheck]`.
+
+Use [`mix soundcheck`](#running-with-mix-soundcheck) when you need every related location or line-level JavaScript output.
 
 ## Design
 
-`docs/architecture.md` in the repository describes the architecture, the planned rule catalog, and the decisions behind them.
+See [docs/architecture.md](https://github.com/leonqadirie/soundcheck/blob/main/docs/architecture.md) for the architecture, planned rule catalog, and design decisions.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
