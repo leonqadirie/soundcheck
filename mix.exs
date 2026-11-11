@@ -18,6 +18,7 @@ defmodule Soundcheck.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       test_ignore_filters: [~r{^test/integration/fixtures/}],
       deps: deps(),
+      hex: [cooldown: "1d"],
       dialyzer: dialyzer(),
       package: package(),
       docs: docs(),
