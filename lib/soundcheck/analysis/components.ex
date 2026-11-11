@@ -94,7 +94,7 @@ defmodule Soundcheck.Analysis.Components do
 
   defp read_delegates(module) do
     case DebugInfo.definitions(module) do
-      {:ok, %{definitions: definitions}} ->
+      {:ok, %DebugInfo.Info{definitions: definitions}} ->
         defined =
           MapSet.new(definitions, fn {name_arity, _kind, _meta, _clauses} -> name_arity end)
 
@@ -220,7 +220,7 @@ defmodule Soundcheck.Analysis.Components do
 
   defp read_captures(module) do
     case DebugInfo.definitions(module) do
-      {:ok, %{definitions: definitions}} ->
+      {:ok, %DebugInfo.Info{definitions: definitions}} ->
         for {_name_arity, _kind, _meta, clauses} <- definitions,
             {_meta, _args, _guards, body} <- clauses,
             {mod, fun} <- component_captures(module, body),

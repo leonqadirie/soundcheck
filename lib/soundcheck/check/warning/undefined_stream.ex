@@ -46,7 +46,7 @@ defmodule Soundcheck.Check.Warning.UndefinedStream do
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
 
-  @streams %{
+  @streams %SocketNames.Spec{
     assign: :streams,
     defining: [:stream, :stream_async, :stream_configure],
     using: [:stream_insert, :stream_delete, :stream_delete_by_dom_id]
@@ -54,7 +54,13 @@ defmodule Soundcheck.Check.Warning.UndefinedStream do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    for %{entry: entry, name: name, defined: defined, span: span, anchor: anchor} <-
+    for %SocketNames.Undefined{
+          entry: entry,
+          name: name,
+          defined: defined,
+          span: span,
+          anchor: anchor
+        } <-
           SocketNames.undefined(graph, @streams) do
       Diagnostic.new(
         __MODULE__,

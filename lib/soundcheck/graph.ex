@@ -154,7 +154,8 @@ defmodule Soundcheck.Graph do
     dir = Path.dirname(module.file)
 
     embedded =
-      for %{pattern: pattern, root: root, suffix: suffix} <- module.embed_templates,
+      for %ModuleIndex.EmbedTemplates{pattern: pattern, root: root, suffix: suffix} <-
+            module.embed_templates,
           file <- Path.wildcard(Path.join(embed_root(dir, root), pattern <> ".heex")),
           do: {file, {module.name, function_name(file, suffix)}}
 

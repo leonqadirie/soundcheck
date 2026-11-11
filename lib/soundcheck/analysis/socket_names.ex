@@ -22,7 +22,18 @@ defmodule Soundcheck.Analysis.SocketNames do
   alias Soundcheck.Heex.Template
   alias Soundcheck.Span
 
-  @type spec :: %{assign: atom(), defining: [atom()], using: [atom()]}
+  defmodule Spec do
+    @moduledoc false
+    # What a check looks for: the assign that holds the names (`:streams`),
+    # the functions that define a name, and the functions that use one.
+    @enforce_keys [:assign, :defining, :using]
+    defstruct [:assign, :defining, :using]
+
+    @type t :: %__MODULE__{assign: atom(), defining: [atom()], using: [atom()]}
+  end
+
+  @type spec :: Spec.t()
+
   defmodule Undefined do
     @moduledoc false
     # A use of a name the module does not define. `defined` lists the names it
@@ -51,7 +62,7 @@ defmodule Soundcheck.Analysis.SocketNames do
   analysis cannot see.
   """
   @spec undefined(Graph.t(), spec()) :: [undefined()]
-  def undefined(%Graph{} = graph, spec) do
+  def undefined(%Graph{} = graph, %Spec{} = spec) do
     for %Entry{kind: kind} = entry <- graph.modules,
         kind in [:live_view, :live_component],
         calls = calls(entry, spec.defining ++ spec.using),

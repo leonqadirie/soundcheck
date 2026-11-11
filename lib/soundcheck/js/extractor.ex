@@ -63,8 +63,73 @@ defmodule Soundcheck.JS.Extractor do
           }
   end
 
+  defmodule Object do
+    @moduledoc false
+    # An object literal, keyed in `Facts.objects` by the token index of its
+    # `{`. `range` holds the token indexes of its braces.
+    @enforce_keys [:entries, :range, :span]
+    defstruct [:entries, :range, :span]
+
+    @type t :: %__MODULE__{
+            entries: [Soundcheck.JS.Extractor.Facts.entry()],
+            range: {non_neg_integer(), non_neg_integer()},
+            span: Soundcheck.Span.t()
+          }
+  end
+
+  defmodule LiveSocket do
+    @moduledoc false
+    # A `new LiveSocket(...)` call. `hooks` refers to its `hooks` option,
+    # `nil` when the call passes none.
+    @enforce_keys [:hooks, :span]
+    defstruct [:hooks, :span]
+
+    @type t :: %__MODULE__{
+            hooks: Soundcheck.JS.Extractor.ref() | nil,
+            span: Soundcheck.Span.t()
+          }
+  end
+
+  defmodule WindowListener do
+    @moduledoc false
+    # A `window.addEventListener("phx:event", ...)` call. `event` is the
+    # name without the `phx:` prefix.
+    @enforce_keys [:event, :span]
+    defstruct [:event, :span]
+
+    @type t :: %__MODULE__{event: String.t(), span: Soundcheck.Span.t()}
+  end
+
+  defmodule Names do
+    @moduledoc false
+    # The keys an object resolves to, each with its value ref, and the
+    # reasons the set may be incomplete: `{:import, source, name}` for keys
+    # that come from another module, `:dynamic` for forms the extractor
+    # cannot follow.
+    defstruct names: %{}, open: []
+
+    @type t :: %__MODULE__{
+            names: %{String.t() => Soundcheck.JS.Extractor.ref()},
+            open: [term()]
+          }
+  end
+
+  defmodule HookEvents do
+    @moduledoc false
+    # The pushes and handled events lexically inside one hook object.
+    @enforce_keys [:pushes, :handles]
+    defstruct [:pushes, :handles]
+
+    @type t :: %__MODULE__{
+            pushes: [Soundcheck.JS.Extractor.Push.t()],
+            handles: [Soundcheck.JS.Extractor.Handle.t()]
+          }
+  end
+
   @type push :: Push.t()
   @type handle :: Handle.t()
+  @type names :: Names.t()
+  @type hook_events :: HookEvents.t()
 
   defmodule Facts do
     @moduledoc false
@@ -91,12 +156,7 @@ defmodule Soundcheck.JS.Extractor do
     @type entry ::
             {:key, String.t(), ref()} | {:spread, ref()} | {:method, String.t()} | :computed
 
-    @typedoc "An object literal, keyed in `objects` by the token index of its `{`."
-    @type object :: %{
-            entries: [entry()],
-            range: {non_neg_integer(), non_neg_integer()},
-            span: Soundcheck.Span.t()
-          }
+    @type object :: Soundcheck.JS.Extractor.Object.t()
 
     @type t :: %__MODULE__{
             file: Path.t(),
@@ -107,10 +167,10 @@ defmodule Soundcheck.JS.Extractor do
             imports: %{String.t() => {source :: String.t(), String.t() | :default | :namespace}},
             exports: %{(String.t() | :default) => ref()},
             exports_open: boolean(),
-            live_sockets: [%{hooks: ref() | nil, span: Soundcheck.Span.t()}],
+            live_sockets: [Soundcheck.JS.Extractor.LiveSocket.t()],
             pushes: [Soundcheck.JS.Extractor.Push.t()],
             handles: [Soundcheck.JS.Extractor.Handle.t()],
-            window_listeners: [%{event: String.t(), span: Soundcheck.Span.t()}]
+            window_listeners: [Soundcheck.JS.Extractor.WindowListener.t()]
           }
   end
 
@@ -168,9 +228,9 @@ defmodule Soundcheck.JS.Extractor do
   forms the extractor cannot follow. A file without `new LiveSocket`
   returns no names and no reasons.
   """
-  @spec registry(Facts.t()) :: %{names: %{String.t() => ref()}, open: [term()]}
+  @spec registry(Facts.t()) :: names()
   def registry(%Facts{} = facts) do
-    Enum.reduce(facts.live_sockets, %{names: %{}, open: []}, fn socket, acc ->
+    Enum.reduce(facts.live_sockets, %Names{}, fn socket, acc ->
       merge(acc, resolve_object_ref(facts, socket.hooks, MapSet.new()))
     end)
   end
@@ -180,20 +240,24 @@ defmodule Soundcheck.JS.Extractor do
   bindings, member assignments, `Object.assign`, and spreads. Returns the
   same shape as `registry/1`.
   """
-  @spec object_names(Facts.t(), ref()) :: %{names: %{String.t() => ref()}, open: [term()]}
+  @spec object_names(Facts.t(), ref()) :: names()
   def object_names(%Facts{} = facts, ref), do: resolve_object_ref(facts, ref, MapSet.new())
 
   @doc "Returns the pushes and handled events lexically inside the object `id`."
-  @spec events_in(Facts.t(), non_neg_integer()) :: %{pushes: [push()], handles: [handle()]}
+  @spec events_in(Facts.t(), non_neg_integer()) :: hook_events()
   def events_in(%Facts{objects: objects} = facts, id) do
-    %{range: {from, to}} = Map.fetch!(objects, id)
+    %Object{range: {from, to}} = Map.fetch!(objects, id)
     inside? = &(&1.offset >= from and &1.offset < to)
-    %{pushes: Enum.filter(facts.pushes, inside?), handles: Enum.filter(facts.handles, inside?)}
+
+    %HookEvents{
+      pushes: Enum.filter(facts.pushes, inside?),
+      handles: Enum.filter(facts.handles, inside?)
+    }
   end
 
   # ── Resolution ──
 
-  defp resolve_object_ref(_facts, nil, _seen), do: %{names: %{}, open: []}
+  defp resolve_object_ref(_facts, nil, _seen), do: %Names{}
 
   # LiveSocket options passed as a variable: follow the binding to its object
   # literal and take its `hooks` entry.
@@ -203,21 +267,21 @@ defmodule Soundcheck.JS.Extractor do
         resolve_object_ref(facts, hooks_entry(facts.objects[id].entries), seen)
 
       _other ->
-        %{names: %{}, open: [:dynamic]}
+        %Names{open: [:dynamic]}
     end
   end
 
-  defp resolve_object_ref(_facts, {:options, _ref}, _seen), do: %{names: %{}, open: [:dynamic]}
+  defp resolve_object_ref(_facts, {:options, _ref}, _seen), do: %Names{open: [:dynamic]}
 
   defp resolve_object_ref(facts, {:object, id}, seen) do
-    %{entries: entries} = Map.fetch!(facts.objects, id)
-    Enum.reduce(entries, %{names: %{}, open: []}, &merge(&2, entry_names(facts, &1, seen)))
+    %Object{entries: entries} = Map.fetch!(facts.objects, id)
+    Enum.reduce(entries, %Names{}, &merge(&2, entry_names(facts, &1, seen)))
   end
 
   defp resolve_object_ref(facts, {:ident, name}, seen) do
     cond do
       MapSet.member?(seen, name) ->
-        %{names: %{}, open: []}
+        %Names{}
 
       Map.has_key?(facts.bindings, name) ->
         seen = MapSet.put(seen, name)
@@ -230,26 +294,26 @@ defmodule Soundcheck.JS.Extractor do
         {source, imported} = facts.imports[name]
 
         merge(
-          %{names: %{}, open: [{:import, source, imported}]},
+          %Names{open: [{:import, source, imported}]},
           assigned_names(facts, name, MapSet.put(seen, name))
         )
 
       true ->
-        %{names: %{}, open: [:dynamic]}
+        %Names{open: [:dynamic]}
     end
   end
 
-  defp resolve_object_ref(_facts, :other, _seen), do: %{names: %{}, open: [:dynamic]}
+  defp resolve_object_ref(_facts, :other, _seen), do: %Names{open: [:dynamic]}
 
-  defp entry_names(_facts, {:key, name, ref}, _seen), do: %{names: %{name => ref}, open: []}
+  defp entry_names(_facts, {:key, name, ref}, _seen), do: %Names{names: %{name => ref}}
   defp entry_names(facts, {:spread, ref}, seen), do: resolve_object_ref(facts, ref, seen)
-  defp entry_names(_facts, {:method, _name}, _seen), do: %{names: %{}, open: []}
-  defp entry_names(_facts, :computed, _seen), do: %{names: %{}, open: [:dynamic]}
+  defp entry_names(_facts, {:method, _name}, _seen), do: %Names{}
+  defp entry_names(_facts, :computed, _seen), do: %Names{open: [:dynamic]}
 
   defp assigned_names(facts, name, seen) do
     member =
-      for {^name, key, ref} <- facts.member_assigns, reduce: %{names: %{}, open: []} do
-        acc -> merge(acc, %{names: %{key => ref}, open: []})
+      for {^name, key, ref} <- facts.member_assigns, reduce: %Names{} do
+        acc -> merge(acc, %Names{names: %{key => ref}})
       end
 
     for {^name, refs} <- facts.object_assigns, ref <- refs, reduce: member do
@@ -262,13 +326,14 @@ defmodule Soundcheck.JS.Extractor do
   export. Export forms the extractor cannot enumerate (`export * from`,
   destructuring) leave the set open.
   """
-  @spec namespace_names(Facts.t()) :: %{names: %{String.t() => ref()}, open: [term()]}
+  @spec namespace_names(Facts.t()) :: names()
   def namespace_names(%Facts{} = facts) do
     names = for {name, ref} <- facts.exports, is_binary(name), into: %{}, do: {name, ref}
-    %{names: names, open: if(facts.exports_open, do: [:dynamic], else: [])}
+    %Names{names: names, open: if(facts.exports_open, do: [:dynamic], else: [])}
   end
 
-  defp merge(a, b), do: %{names: Map.merge(a.names, b.names), open: Enum.uniq(a.open ++ b.open)}
+  defp merge(%Names{} = a, %Names{} = b),
+    do: %Names{names: Map.merge(a.names, b.names), open: Enum.uniq(a.open ++ b.open)}
 
   # ── Recognition ──
 
@@ -338,7 +403,7 @@ defmodule Soundcheck.JS.Extractor do
         {kind, "phx:" <> event, start, stop}
       ]
       when kind in [:string, :template] ->
-        listener = %{event: event, span: span(ctx, start, stop)}
+        listener = %WindowListener{event: event, span: span(ctx, start, stop)}
         %{facts | window_listeners: [listener | facts.window_listeners]}
 
       _other ->
@@ -404,11 +469,11 @@ defmodule Soundcheck.JS.Extractor do
 
     case arg_ranges(ctx, open) do
       [_url, _socket, {from, _to} | _] ->
-        socket = %{hooks: hooks_option(ctx, from), span: span(ctx, start, stop)}
+        socket = %LiveSocket{hooks: hooks_option(ctx, from), span: span(ctx, start, stop)}
         register_objects(%{facts | live_sockets: [socket | facts.live_sockets]}, ctx, from)
 
       _fewer ->
-        socket = %{hooks: nil, span: span(ctx, start, stop)}
+        socket = %LiveSocket{hooks: nil, span: span(ctx, start, stop)}
         %{facts | live_sockets: [socket | facts.live_sockets]}
     end
   end
@@ -627,7 +692,7 @@ defmodule Soundcheck.JS.Extractor do
         start = token_start(ctx, open)
         stop = token_stop(ctx, close)
 
-        object = %{entries: entries, range: {start, stop}, span: span(ctx, start, stop)}
+        object = %Object{entries: entries, range: {start, stop}, span: span(ctx, start, stop)}
         facts = %{facts | objects: Map.put(facts.objects, open, object)}
 
         Enum.reduce(entries, facts, fn

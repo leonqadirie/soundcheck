@@ -262,7 +262,7 @@ defmodule Soundcheck.Analysis.Handlers do
 
   defp read_attaches(module, stage) do
     case DebugInfo.definitions(module) do
-      {:ok, %{definitions: definitions}} ->
+      {:ok, %DebugInfo.Info{definitions: definitions}} ->
         if Enum.any?(definitions, &attaches_in?(&1, stage)), do: [:attach_hook], else: []
 
       {:error, _reason} ->
@@ -287,7 +287,7 @@ defmodule Soundcheck.Analysis.Handlers do
   # ── Senders ──
 
   defp collect_calls(module, fun) do
-    with {:ok, %{definitions: definitions}} <- DebugInfo.definitions(module) do
+    with {:ok, %DebugInfo.Info{definitions: definitions}} <- DebugInfo.definitions(module) do
       emitters =
         for {_name_arity, _kind, _meta, clauses} <- definitions,
             {_meta, _args, _guards, body} <- clauses,

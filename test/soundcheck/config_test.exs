@@ -41,7 +41,7 @@ defmodule Soundcheck.ConfigTest do
   end
 
   test "selected/2 adds enabled checks and removes disabled ones" do
-    config = %{checks: %{UnusedHook => [], UndefinedHook => false}, plugin: []}
+    config = %Config{checks: %{UnusedHook => [], UndefinedHook => false}, plugin: []}
 
     assert Config.selected(config, [UnhandledEvent, UndefinedHook]) == [
              UnhandledEvent,
@@ -50,7 +50,7 @@ defmodule Soundcheck.ConfigTest do
   end
 
   test "a missing file or config name is empty" do
-    assert Config.read("does/not/exist.exs") == %{checks: %{}, plugin: []}
-    assert Config.from_data(%{configs: []}, "default") == %{checks: %{}, plugin: []}
+    assert Config.read("does/not/exist.exs") == %Config{}
+    assert Config.from_data(%{configs: []}, "default") == %Config{}
   end
 end

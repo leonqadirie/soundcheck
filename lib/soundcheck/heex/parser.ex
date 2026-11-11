@@ -250,7 +250,7 @@ defmodule Soundcheck.Heex.Parser do
   end
 
   defp finish_clause(block, children, stop, ctx) do
-    clause = %{
+    clause = %Node.EexBlock.Clause{
       source: block.clause.source,
       ast: clause_head_ast(ctx, block.clause),
       span: span(ctx, block.clause.start, stop),
@@ -264,7 +264,7 @@ defmodule Soundcheck.Heex.Parser do
     %{source: source, code_start: code_start, span: head_span} = block.head
 
     %Node.EexBlock{
-      head: %{
+      head: %Node.EexBlock.Head{
         ast: block_head_ast(ctx, source, code_start, closer),
         source: source,
         span: head_span

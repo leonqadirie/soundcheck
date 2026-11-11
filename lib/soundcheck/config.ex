@@ -11,9 +11,9 @@ defmodule Soundcheck.Config do
   #     params, `{Check, false}` disables it;
   #   * the `Soundcheck` plugin's params, such as `js_paths`.
 
-  @type t :: %{checks: %{module() => keyword() | false}, plugin: keyword()}
+  defstruct checks: %{}, plugin: []
 
-  @empty %{checks: %{}, plugin: []}
+  @type t :: %__MODULE__{checks: %{module() => keyword() | false}, plugin: keyword()}
 
   @doc "Reads `path`; a missing file is an empty config."
   @spec read(Path.t(), String.t()) :: t()
@@ -22,7 +22,7 @@ defmodule Soundcheck.Config do
       {data, _binding} = Code.eval_file(path)
       from_data(data, name)
     else
-      @empty
+      %__MODULE__{}
     end
   end
 
@@ -31,21 +31,24 @@ defmodule Soundcheck.Config do
   def from_data(%{configs: configs}, name) when is_list(configs) do
     case Enum.find(configs, &(Map.get(&1, :name) == name)) do
       nil ->
-        @empty
+        %__MODULE__{}
 
       config ->
-        %{checks: checks(Map.get(config, :checks)), plugin: plugin(Map.get(config, :plugins, []))}
+        %__MODULE__{
+          checks: checks(Map.get(config, :checks)),
+          plugin: plugin(Map.get(config, :plugins, []))
+        }
     end
   end
 
-  def from_data(_data, _name), do: @empty
+  def from_data(_data, _name), do: %__MODULE__{}
 
   @doc """
   Selects the checks to run: the defaults, plus checks the config enables,
   minus checks it disables.
   """
   @spec selected(t(), [module()]) :: [module()]
-  def selected(%{checks: checks}, defaults) do
+  def selected(%__MODULE__{checks: checks}, defaults) do
     enabled = for {check, params} <- checks, params != false, do: check
     disabled = for {check, false} <- checks, do: check
     Enum.uniq(defaults ++ enabled) -- disabled
@@ -53,7 +56,7 @@ defmodule Soundcheck.Config do
 
   @doc "The params the config sets for `check`, or `[]`."
   @spec params(t(), module()) :: keyword()
-  def params(%{checks: checks}, check) do
+  def params(%__MODULE__{checks: checks}, check) do
     case Map.get(checks, check) do
       params when is_list(params) -> params
       _unset_or_disabled -> []

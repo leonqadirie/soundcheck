@@ -35,14 +35,24 @@ defmodule Soundcheck.Beam.Introspect do
 
   @type component :: %{kind: :def | :defp, line: pos_integer(), attrs: [map()], slots: [map()]}
 
-  @type route :: %{
-          path: String.t(),
-          verb: atom(),
-          live_view: module(),
-          action: atom() | nil,
-          live_session: atom(),
-          on_mount: [mount_hook()]
-        }
+  defmodule Route do
+    @moduledoc false
+    # One live route of a router, with the `on_mount` hooks of its
+    # `live_session`.
+    @enforce_keys [:path, :verb, :live_view, :action, :live_session, :on_mount]
+    defstruct [:path, :verb, :live_view, :action, :live_session, :on_mount]
+
+    @type t :: %__MODULE__{
+            path: String.t(),
+            verb: atom(),
+            live_view: module(),
+            action: atom() | nil,
+            live_session: atom(),
+            on_mount: [Soundcheck.Beam.Introspect.mount_hook()]
+          }
+  end
+
+  @type route :: Route.t()
 
   @doc """
   Returns whether `module` is a LiveView or LiveComponent and, for a
@@ -179,7 +189,7 @@ defmodule Soundcheck.Beam.Introspect do
       {view, action, _opts, %{name: session, extra: extra}} when is_atom(view) ->
         with {:ok, hooks} <- mount_hooks(Map.get(extra, :on_mount, [])) do
           {:ok,
-           %{
+           %Route{
              path: path,
              verb: verb,
              live_view: view,

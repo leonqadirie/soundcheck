@@ -27,15 +27,35 @@ defmodule Soundcheck.Analysis.AssignUse do
   alias Soundcheck.Heex.Reads
   alias Soundcheck.Heex.Walker
 
-  @type write :: %{
-          key: atom(),
-          call: :assign | :assign_new | :update | :assign_async,
-          value: Macro.t() | nil,
-          line: pos_integer(),
-          column: pos_integer()
-        }
+  defmodule Write do
+    @moduledoc false
+    # One literal-key write to the socket. `value` is the written
+    # expression, `nil` for `assign_async/3`.
+    @enforce_keys [:key, :call, :value, :line, :column]
+    defstruct [:key, :call, :value, :line, :column]
 
-  @type reads :: %{code: MapSet.t(atom()), template: [atom()], open?: boolean()}
+    @type t :: %__MODULE__{
+            key: atom(),
+            call: :assign | :assign_new | :update | :assign_async,
+            value: Macro.t() | nil,
+            line: pos_integer(),
+            column: pos_integer()
+          }
+  end
+
+  defmodule ReadSet do
+    @moduledoc false
+    # The assign keys a module reads: in its functions (`code`) and in the
+    # templates it renders (`template`). `open?` is `true` when the
+    # analysis cannot list every read.
+    @enforce_keys [:code, :template, :open?]
+    defstruct [:code, :template, :open?]
+
+    @type t :: %__MODULE__{code: MapSet.t(atom()), template: [atom()], open?: boolean()}
+  end
+
+  @type write :: Write.t()
+  @type reads :: ReadSet.t()
   @type layout_reads :: {[atom()], boolean()}
 
   @writers [:assign, :assign_new, :update, :assign_async]
@@ -84,7 +104,7 @@ defmodule Soundcheck.Analysis.AssignUse do
     {code, code_open?} = code_reads(entry)
     {template_keys, template_open?} = template_reads(templates(graph, entry))
 
-    %{
+    %ReadSet{
       code: MapSet.union(code, helper_reads(graph, entry)),
       template: template_keys ++ layout_keys,
       open?: code_open? or template_open? or layout_open?
@@ -179,7 +199,7 @@ defmodule Soundcheck.Analysis.AssignUse do
   defp write_keys(_call, _args, _meta), do: []
 
   defp write(call, key, value, meta),
-    do: %{key: key, call: call, value: value, line: meta[:line], column: meta[:column]}
+    do: %Write{key: key, call: call, value: value, line: meta[:line], column: meta[:column]}
 
   # ── Reads ──
 

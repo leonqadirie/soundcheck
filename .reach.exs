@@ -7,7 +7,7 @@
     cache: ["Soundcheck.Cache", "Soundcheck.Once"],
     orchestration: ["Soundcheck.Credo.*", "Soundcheck.Check", "Soundcheck.Rule"],
     graph: ["Soundcheck.Graph", "Soundcheck.Graph.*"],
-    runner: "Soundcheck.Runner",
+    runner: ["Soundcheck.Runner", "Soundcheck.Runner.*"],
     output: "Soundcheck.Output.*",
     checks: "Soundcheck.Check.*",
     filters: [

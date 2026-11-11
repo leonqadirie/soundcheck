@@ -100,18 +100,40 @@ defmodule Soundcheck.Heex.Node do
     # `{:ok, x} ->`), its children, and for a middle clause the AST of its
     # head without the arrow (`nil` for the first clause, whose head is the
     # block's).
+    defmodule Head do
+      @moduledoc false
+      # The expression that opens the block.
+      @enforce_keys [:ast, :source, :span]
+      defstruct [:ast, :source, :span]
+
+      @type t :: %__MODULE__{
+              ast: Soundcheck.Heex.Node.expr(),
+              source: String.t(),
+              span: Span.t()
+            }
+    end
+
+    defmodule Clause do
+      @moduledoc false
+      # One clause of the block and the nodes it renders.
+      @enforce_keys [:source, :ast, :span, :children]
+      defstruct [:source, :ast, :span, :children]
+
+      @type t :: %__MODULE__{
+              source: String.t(),
+              ast: Soundcheck.Heex.Node.expr() | nil,
+              span: Span.t(),
+              children: [Soundcheck.Heex.Node.t()]
+            }
+    end
+
     @enforce_keys [:head, :clauses, :span, :marker]
     defstruct [:head, :clauses, :span, :marker, close: :normal]
 
-    @type clause :: %{
-            source: String.t(),
-            ast: Soundcheck.Heex.Node.expr() | nil,
-            span: Span.t(),
-            children: [Soundcheck.Heex.Node.t()]
-          }
+    @type clause :: Clause.t()
 
     @type t :: %__MODULE__{
-            head: %{ast: Soundcheck.Heex.Node.expr(), source: String.t(), span: Span.t()},
+            head: Head.t(),
             clauses: [clause()],
             span: Span.t(),
             marker: String.t(),

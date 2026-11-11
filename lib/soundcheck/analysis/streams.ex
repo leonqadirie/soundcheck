@@ -11,21 +11,44 @@ defmodule Soundcheck.Analysis.Streams do
   alias Soundcheck.Heex.Template
   alias Soundcheck.Span
 
-  @type read :: %{name: atom(), span: Span.t(), ast: Macro.t()}
+  defmodule Read do
+    @moduledoc false
+    # One `@streams.name` or `@streams[:name]` read. The span starts at
+    # `@streams`; `ast` is the read expression.
+    @enforce_keys [:name, :span, :ast]
+    defstruct [:name, :span, :ast]
+
+    @type t :: %__MODULE__{name: atom(), span: Span.t(), ast: Macro.t()}
+  end
+
+  defmodule Loop do
+    @moduledoc false
+    # An element whose `:for` loops over the stream `stream`, with the
+    # element that contains it (`nil` at the template root).
+    @enforce_keys [:element, :parent, :stream]
+    defstruct [:element, :parent, :stream]
+
+    @type t :: %__MODULE__{
+            element: Node.Element.t(),
+            parent: Node.Element.t() | nil,
+            stream: atom()
+          }
+  end
+
+  @type read :: Read.t()
+  @type loop :: Loop.t()
 
   @doc """
   Every element that loops over a stream with `:for`, with the element that
   contains it (`nil` at the template root).
   """
-  @spec loops(Template.t()) :: [
-          %{element: Node.Element.t(), parent: Node.Element.t() | nil, stream: atom()}
-        ]
+  @spec loops(Template.t()) :: [loop()]
   def loops(%Template{root: root}) do
     for {element, parent} <- with_parents(root, nil),
         %Node.Attr{name: ":for", value: {:expr, {:<-, _, [_pattern, source]}, _source, _span}} <-
           element.attrs,
         {:ok, name} <- [stream_name(source)],
-        do: %{element: element, parent: parent, stream: name}
+        do: %Loop{element: element, parent: parent, stream: name}
   end
 
   @doc "Every element with `phx-update=\"stream\"`."
@@ -104,7 +127,7 @@ defmodule Soundcheck.Analysis.Streams do
   defp stream_args({_name, _meta, args}, file) do
     for arg <- args,
         {:ok, name} <- [stream_name(arg)],
-        do: %{name: name, span: span(arg, name, file), ast: arg}
+        do: %Read{name: name, span: span(arg, name, file), ast: arg}
   end
 
   defp enumerating_call?({{:., _, [{:__aliases__, _, [module]}, _fun]}, _, args})
