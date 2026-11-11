@@ -31,7 +31,7 @@ defmodule Soundcheck.CheckTest do
       {"lib/b.ex", "defmodule B do\nend\n"}
     ]
 
-    Graph.prepare(inputs(sources), js_paths: [])
+    Graph.Current.prepare(inputs(sources), js_paths: [])
     source_files = for {file, source} <- sources, do: Credo.SourceFile.parse(source, file)
 
     assert :ok =
@@ -56,6 +56,29 @@ defmodule Soundcheck.CheckTest do
               category: :warning,
               confidence: :high,
               tier: :syntactic,
+              explanations: [check: "Never compiles."]
+          end
+        end
+      )
+    end
+  end
+
+  test "use Soundcheck.Check rejects needs the graph does not link" do
+    message = "use Soundcheck.Check got unknown needs: [:handlers]"
+
+    assert_raise ArgumentError, message, fn ->
+      Code.compile_quoted(
+        quote do
+          defmodule UnknownNeeds do
+            use Soundcheck.Check,
+              id: "SC9997",
+              base_priority: :normal,
+              category: :warning,
+              confidence: :high,
+              tier: :semantic,
+              needs: [:routes, :handlers],
+              default: false,
+              summary: "Never compiles",
               explanations: [check: "Never compiles."]
           end
         end

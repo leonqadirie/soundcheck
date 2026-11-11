@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.SubscribedWithoutHandleInfo do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: true,
     summary: "LiveViews that subscribe in `mount/3` but define no `handle_info/2`",
     param_defaults: [subscribe_functions: [~r/^Phoenix\.PubSub\.subscribe$/, ~r/\.subscribe$/]],
@@ -38,8 +39,6 @@ defmodule Soundcheck.Check.Warning.SubscribedWithoutHandleInfo do
     ]
 
   alias Soundcheck.Analysis.Handlers
-  alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Elixir.ModuleIndex
   alias Soundcheck.Graph
@@ -48,9 +47,9 @@ defmodule Soundcheck.Check.Warning.SubscribedWithoutHandleInfo do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, :view} <- LiveModules.all(graph),
+    for {entry, :view} <- Graph.live_modules(graph),
         {:ok, %{patterns: [], closed?: true}} <-
           [Handlers.handler_set(entry.name, :handle_info, routes)],
         clause <- Map.get(entry.functions, {:mount, 3}, []),

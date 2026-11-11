@@ -25,6 +25,7 @@ defmodule Bench.Scenarios do
   alias Soundcheck.Elixir.Sigils
   alias Soundcheck.Graph
   alias Soundcheck.Graph.Input
+  alias Soundcheck.Graph.Link
   alias Soundcheck.Heex.Parser
   alias Soundcheck.JS.Extractor
   alias Soundcheck.Runner
@@ -53,6 +54,9 @@ defmodule Bench.Scenarios do
         Enum.map(data.inputs, &ModuleIndex.modules(&1.ast, &1.source, &1.file))
       end,
       "graph build" => fn data -> Graph.build(data.inputs, js_paths: [data.js_dir]) end,
+      "graph build and link" => fn data ->
+        data.inputs |> Graph.build(js_paths: [data.js_dir]) |> Link.link(Graph.links())
+      end,
       "heex parse" => fn data -> Enum.map(data.heex, &Parser.parse/1) end,
       "js extract" => fn data ->
         Enum.map(data.js, fn {file, source} -> Extractor.extract(source, file: file) end)
@@ -101,7 +105,7 @@ defmodule Bench.Scenarios do
           {:ok, input} <- [Input.parse(file, File.read!(file))],
           do: input
 
-    Graph.build(inputs, js_paths: [Bench.js_dir(size)])
+    inputs |> Graph.build(js_paths: [Bench.js_dir(size)]) |> Link.link(Graph.links())
   end
 
   defp input("credo", size) do

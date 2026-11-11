@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.UnhandledInfoMessage do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:live_modules, :routes, :render_index],
     default: false,
     summary:
       "Messages a LiveView sends itself, or a LiveComponent sends its parent LiveView, with no matching `handle_info/2` clause",
@@ -40,19 +41,17 @@ defmodule Soundcheck.Check.Warning.UnhandledInfoMessage do
       ]
     ]
 
-  alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Graph
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    render_index = Components.render_index(graph)
-    routes = MountHooks.routes(graph)
+    render_index = Graph.render_index(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, kind} <- LiveModules.all(graph),
+    for {entry, kind} <- Graph.live_modules(graph),
         {:ok, [_ | _] = sends} <- [Handlers.self_sends(entry.name)],
         receiver <- receivers(entry.name, kind, render_index),
         {:ok, handlers} <- [Handlers.handler_set(receiver, :handle_info, routes)],

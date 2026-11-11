@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
     category: :warning,
     confidence: :medium,
     tier: :semantic,
+    needs: [:routes, :render_index, :js_helpers],
     default: false,
     summary:
       "`phx-click` events whose `phx-value-*` and `JS.push` values lack a key every matching `handle_event/3` clause requires",
@@ -43,10 +44,8 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
     ]
 
   alias Soundcheck.Analysis.Anchors
-  alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Beam.DebugInfo
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
@@ -60,10 +59,10 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    render_index = Components.render_index(graph)
-    js_helpers = Events.js_helpers(graph)
+    render_index = Graph.render_index(graph)
+    js_helpers = Graph.js_helpers(graph)
     metadata = MapSet.new(Keyword.fetch!(params, :metadata_keys), &to_string/1)
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
     for template <- graph.templates,
         %Node.Element{} = element <- Walker.elements(template.root),

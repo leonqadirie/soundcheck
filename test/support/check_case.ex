@@ -7,12 +7,13 @@ defmodule Soundcheck.CheckCase do
   # rule, and every run-cache entry besides the run's graph is a pure
   # function of its key (a compiled fixture module), so concurrent tests
   # share those entries safely. A test that sets the run's graph
-  # (`run_check/4`, `Soundcheck.Graph.prepare/2`) must pass `async: false`,
+  # (`run_check/4`, `Soundcheck.Graph.Current.prepare/3`) must pass `async: false`,
   # which also empties the cache before each test.
 
   alias Soundcheck.Cache
   alias Soundcheck.Graph
   alias Soundcheck.Graph.Input
+  alias Soundcheck.Graph.Link
 
   defmacro __using__(opts) do
     async? = Keyword.get(opts, :async, true)
@@ -43,11 +44,18 @@ defmodule Soundcheck.CheckCase do
   defp normalize(sources), do: sources
 
   @doc """
-  Runs `check`'s analysis over a graph built from `sources`. `graph_opts`
-  go to `Soundcheck.Graph.build/2` (default: no JavaScript).
+  Runs `check`'s analysis over a graph built from `sources`, with only the
+  links the check declares, so a check that reads an undeclared link
+  raises. `graph_opts` go to `Soundcheck.Graph.build/2` (default: no
+  JavaScript).
   """
   def analyze(check, sources, params \\ [], graph_opts \\ []) do
-    graph = Graph.build(inputs(sources), Keyword.merge([js_paths: []], graph_opts))
+    graph =
+      sources
+      |> inputs()
+      |> Graph.build(Keyword.merge([js_paths: []], graph_opts))
+      |> Link.link(check.needs())
+
     params = Keyword.merge(check.param_defaults(), params)
     graph |> check.analyze(params) |> Soundcheck.Diagnostic.normalize()
   end
@@ -55,7 +63,7 @@ defmodule Soundcheck.CheckCase do
   @doc "Runs `check` through Credo's `run/2` on the file `file` of `sources`."
   def run_check(check, sources, file \\ "lib/demo.ex", params \\ []) do
     inputs = inputs(sources)
-    Graph.prepare(inputs, js_paths: [])
+    Graph.Current.prepare(inputs, js_paths: [])
     %{source: source} = Enum.find(inputs, &(&1.file == file))
     check.run(Credo.SourceFile.parse(source, file), params)
   end

@@ -12,6 +12,8 @@ defmodule Soundcheck.Check do
   #     README's check table.
   #   * `:tier_note` - replaces the generated tier sentence when part of the
   #     check works without compiling.
+  #   * `:needs` - the graph links `analyze/2` reads, from
+  #     `Soundcheck.Graph.links/0` (default `[]`).
   #
   # The macro appends the confidence and tier sentence to the `:check`
   # explanation and documents the `excluded_paths` and `strict` params
@@ -44,7 +46,7 @@ defmodule Soundcheck.Check do
   alias Soundcheck.Suppression
 
   @required_rule_options [:confidence, :tier, :default, :summary]
-  @rule_options @required_rule_options ++ [:tier_note]
+  @rule_options @required_rule_options ++ [:tier_note, :needs]
 
   @param_docs [
     excluded_paths: "Paths to skip (atoms, binaries as path segments, or regexes).",
@@ -86,6 +88,9 @@ defmodule Soundcheck.Check do
       @impl Soundcheck.Rule
       def summary, do: unquote(rule_opts[:summary])
 
+      @impl Soundcheck.Rule
+      def needs, do: unquote(rule_opts[:needs])
+
       @impl Credo.Check
       def run(%SourceFile{} = source_file, params),
         do: Soundcheck.Check.run_on_file(__MODULE__, source_file, params)
@@ -96,16 +101,28 @@ defmodule Soundcheck.Check do
     end
   end
 
-  # Raises at the check's compile time, naming the missing options, instead
-  # of a `KeyError` from inside the generated code.
+  # Raises at the check's compile time, naming the missing options or the
+  # unknown links, instead of a `KeyError` from inside the generated code.
   defp validate_rule_options!(rule_opts) do
     case @required_rule_options -- Keyword.keys(rule_opts) do
       [] ->
-        Keyword.validate!(rule_opts, [tier_note: nil] ++ @required_rule_options)
+        rule_opts
+        |> Keyword.validate!([tier_note: nil, needs: []] ++ @required_rule_options)
+        |> tap(&validate_needs!(&1[:needs]))
 
       missing ->
         raise ArgumentError,
               "use Soundcheck.Check is missing required options: #{inspect(missing)}"
+    end
+  end
+
+  defp validate_needs!(needs) do
+    case needs -- Graph.links() do
+      [] ->
+        :ok
+
+      unknown ->
+        raise ArgumentError, "use Soundcheck.Check got unknown needs: #{inspect(unknown)}"
     end
   end
 
@@ -183,7 +200,7 @@ defmodule Soundcheck.Check do
 
   defp diagnostics(check, params) do
     check
-    |> Rule.run(Graph.current(), params)
+    |> Rule.run(Graph.Current.get(check.needs()), params)
     |> Rule.drop_silenced(baseline(), &directives/1)
   end
 

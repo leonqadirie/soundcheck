@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.PossiblyUnsetAssign do
     category: :warning,
     confidence: :medium,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: false,
     summary:
       "Template reads of assigns `mount/3` does not set on every path before the first render",
@@ -53,7 +54,6 @@ defmodule Soundcheck.Check.Warning.PossiblyUnsetAssign do
   alias Soundcheck.Analysis.Anchors
   alias Soundcheck.Analysis.Assigns
   alias Soundcheck.Analysis.Components
-  alias Soundcheck.Analysis.LiveModules
   alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
@@ -61,10 +61,10 @@ defmodule Soundcheck.Check.Warning.PossiblyUnsetAssign do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
     assumed = MapSet.new(Keyword.fetch!(params, :assume_set))
 
-    for {entry, :view} <- LiveModules.all(graph),
+    for {entry, :view} <- Graph.live_modules(graph),
         {:ok, guaranteed, resolution} <- [guaranteed(entry, routes, assumed)],
         template <- Components.render_templates(graph, entry.name),
         {:ok, render_keys} <- [Assigns.render_keys(graph, template)],

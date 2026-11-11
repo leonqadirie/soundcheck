@@ -145,6 +145,8 @@ lib/
     graph.ex                             # builds the per-run graph, query API
     graph/
       input.ex                           # one parsed Elixir source
+      link.ex                            # adds the links the run's checks need
+      current.ex                         # holds the run's graph
     analysis/
       events.ex                          # event emitters and their receivers
       handlers.ex                        # callback clauses from compiled modules
@@ -401,7 +403,7 @@ Every probe goes through `Soundcheck.Once.run/2` with `Code.ensure_loaded/1` and
 
 **Decision:** a typed property graph in a set of named ETS tables owned by `Soundcheck.Cache`, built exactly once per run, before any check runs. Readers do point lookups. Nobody copies the whole graph.
 
-**As implemented (2026-10-12):** `Soundcheck.Graph` is one struct that holds the indexed modules, templates, and JavaScript facts, with maps from module name and template owner for point lookups. `Soundcheck.Once.run_shared/2` stores it as a persistent term, so checks read it without copying (see Q1).
+**As implemented (2026-10-12, links added 2026-11-12):** `Soundcheck.Graph` is one struct that holds the indexed modules, templates, and JavaScript facts, with maps from module name and template owner for point lookups. `Soundcheck.Graph.Link` then adds the links between files that several rules read: live modules and their kinds, live routes, the render index, and JS helpers. Each check declares the links it reads with `use Soundcheck.Check, needs: [...]`, and the build adds only the union of the enabled checks' needs, so a run of syntactic checks never probes compiled modules for links. An unlinked field holds `:not_linked`, and its accessor raises, so a check that reads a link it did not declare fails its first test. `Soundcheck.Graph.Current` stores the graph as a persistent term through `Soundcheck.Once.run_shared/2`, so checks read it without copying (see Q1).
 
 ### 5.1 Nodes
 
@@ -500,7 +502,7 @@ Every edge whose resolution failed stores `{:unverifiable, reason}`, never a gue
 
 ### 5.3 Storage
 
-**Current implementation (phase 1, first slice).** `Soundcheck.Graph` is a plain struct of per-file facts (indexed modules, templates, JS facts), built once per run through `Soundcheck.Once` and stored as one term in the run cache. Each rule reads it once, when its `run_on_all_source_files/3` computes the diagnostics for the whole project. The multi-table layout below replaces the single term when linking adds edges and the large-app budget (section 12) requires point lookups.
+**Current implementation.** `Soundcheck.Graph` is a plain struct of per-file facts (indexed modules, templates, JS facts) plus the links its checks declare, built once per run through `Soundcheck.Once` and stored as one term in the run cache. Each rule reads it once, when its `run_on_all_source_files/3` computes the diagnostics for the whole project. The multi-table layout below replaces the single term when linking adds edges and the large-app budget (section 12) requires point lookups.
 
 ```elixir
 defmodule Soundcheck.Graph do
@@ -1367,8 +1369,9 @@ Exit criteria:
 
 - **No race on the graph:** Credo's runner starts check tasks only after the task returns, so every check sees a finished graph.
 - **Rule results:** each rule computes once per run because its check overrides `run_on_all_source_files/3`, which Credo calls once per check (`runner.ex:92`), instead of the per-file `run/2`.
+- **Shared links:** the task reads the enabled checks from `Credo.Execution.checks/1`, after `--only` and `--ignore` filtering, and links the union of their `needs` into the graph. A check that runs outside that set links its own needs on its copy of the graph.
 - **Shared facts:** checks run concurrently and ask for the same per-module facts, so those compute once per run through `Soundcheck.Once.run(key, fun)`. That is a GenServer call; the first caller spawns the computation, later callers for the same key wait in a queue, and the result lands in ETS.
-- **Fallback:** if the task did not run (an unknown command, or checks enabled without the plugin), the first graph query triggers the same build through `Soundcheck.Once`, from the Mix project's `lib/` and `web/` sources.
+- **Fallback:** if the task did not run (an unknown command, or checks enabled without the plugin), the first graph query triggers the same build through `Soundcheck.Once`, from the Mix project's `lib/` and `web/` sources, with every link.
 - **Wiring (implemented):** the plugin registers the task as `{BuildGraphTask, plugin: Soundcheck}`; Credo calls `call(exec, opts)` with task options, so the task reads plugin params without referencing the plugin module, which would form a compile-time cycle. The task records a graph summary in the exec assign `"soundcheck.graph"`.
 - **Filenames:** Credo reports source filenames relative to the current directory, not `--working-dir`. The graph keys files by those names, and `excluded_paths` matches against them.
 - **Invalidation:** `init/1` clears the tables, and `Soundcheck.Credo.ClearCacheTask` clears them again from `:halt_execution`, the ash_credo double clear. A fresh `generation` reference keys rule results.

@@ -28,7 +28,14 @@ defmodule Soundcheck.Rule do
   @doc "One line on what the check catches, as the README's check table shows it."
   @callback summary() :: String.t()
 
+  @doc "The graph links `analyze/2` reads, from `Soundcheck.Graph.links/0`."
+  @callback needs() :: [Soundcheck.Graph.link()]
+
   @callback analyze(Soundcheck.Graph.t(), params :: keyword()) :: [Soundcheck.Diagnostic.t()]
+
+  @doc "The union of the graph links `checks` need."
+  @spec needs([module()]) :: [Soundcheck.Graph.link()]
+  def needs(checks), do: checks |> Enum.flat_map(& &1.needs()) |> Enum.uniq()
 
   @doc """
   Runs `check` over `graph` and returns its diagnostics without duplicates,

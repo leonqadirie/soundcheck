@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: true,
     summary:
       "Template reads of assigns `mount/3` sets only when connected, which crash the first, disconnected render",
@@ -49,7 +50,6 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
   alias Soundcheck.Analysis.Anchors
   alias Soundcheck.Analysis.Assigns
   alias Soundcheck.Analysis.Components
-  alias Soundcheck.Analysis.LiveModules
   alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
@@ -57,9 +57,9 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, :view} <- LiveModules.all(graph),
+    for {entry, :view} <- Graph.live_modules(graph),
         {candidates, resolution} <- [candidates(entry, routes)],
         MapSet.size(candidates) > 0,
         template <- Components.render_templates(graph, entry.name),

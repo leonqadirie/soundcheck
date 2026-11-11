@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
     category: :warning,
     confidence: :medium,
     tier: :semantic,
+    needs: [:routes, :render_index],
     default: false,
     summary:
       "`pushEvent`/`pushEventTo` calls in hooks that the receiving LiveView does not handle",
@@ -41,11 +42,9 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
     ]
 
   alias Soundcheck.Analysis.Anchors
-  alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Events.Emitter
   alias Soundcheck.Analysis.Hooks
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.JS.Extractor.Push
@@ -53,7 +52,7 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
     registry = Hooks.registry(graph)
-    index = %{render: Components.render_index(graph), routes: MountHooks.routes(graph)}
+    index = %{render: Graph.render_index(graph), routes: Graph.routes(graph)}
 
     diagnostics =
       for %{name: name} = usage <- Hooks.usages(graph),

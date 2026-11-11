@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:routes, :render_index, :js_helpers],
     default: true,
     summary:
       "Template events (`phx-*`, `JS.push`) with no `handle_event/3` clause in the receiving LiveView or LiveComponent",
@@ -62,9 +63,7 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
     ]
 
   alias Soundcheck.Analysis.Anchors
-  alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Events
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Analysis.Suggest
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
@@ -72,9 +71,9 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    render_index = Components.render_index(graph)
-    js_helpers = Events.js_helpers(graph)
-    index = %{render: render_index, routes: MountHooks.routes(graph)}
+    render_index = Graph.render_index(graph)
+    js_helpers = Graph.js_helpers(graph)
+    index = %{render: render_index, routes: Graph.routes(graph)}
 
     for template <- graph.templates,
         emitter <- Events.emitters(template, js_helpers),

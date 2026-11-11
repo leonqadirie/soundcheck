@@ -54,6 +54,19 @@ defmodule Soundcheck.GraphTest do
     assert [%{file: ^template, owner: {Demo.Pages, :about_page}}] = graph.templates
   end
 
+  test "a link's accessor raises until Graph.Link adds it" do
+    graph = Graph.build([], js_paths: [])
+
+    assert_raise ArgumentError, ~r/no :routes link/, fn -> Graph.routes(graph) end
+    assert Graph.routes(Graph.Link.link(graph, [:routes])) == []
+  end
+
+  test "Graph.Link keeps the links a graph already holds" do
+    graph = %{Graph.build([], js_paths: []) | routes: [:kept]}
+
+    assert Graph.Link.link(graph, [:routes]).routes == [:kept]
+  end
+
   test "build/2 rejects unknown options" do
     assert_raise ArgumentError, ~r/unknown keys \[:js_path\]/, fn ->
       Graph.build([], js_path: ["assets/js"])

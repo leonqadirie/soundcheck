@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Refactor.NavigateAcrossLiveSession do
     category: :refactor,
     confidence: :low,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: false,
     summary:
       "`push_navigate`, `<.link navigate>`, and `JS.navigate` into another live_session, which reloads the page",
@@ -40,8 +41,6 @@ defmodule Soundcheck.Check.Refactor.NavigateAcrossLiveSession do
       ]
     ]
 
-  alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Analysis.Navigation
   alias Soundcheck.Analysis.Routes
   alias Soundcheck.Diagnostic
@@ -51,11 +50,11 @@ defmodule Soundcheck.Check.Refactor.NavigateAcrossLiveSession do
   def analyze(%Graph{} = graph, params) do
     routes =
       Enum.reject(
-        MountHooks.routes(graph),
+        Graph.routes(graph),
         &(&1.live_session in Keyword.fetch!(params, :ignore_sessions))
       )
 
-    for {entry, :view} <- LiveModules.all(graph),
+    for {entry, :view} <- Graph.live_modules(graph),
         origin = sessions(routes, &(&1.live_view == entry.name)),
         origin != [],
         {path, span, anchor} <- Navigation.targets(graph, entry, :navigate),
