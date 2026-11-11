@@ -10,9 +10,9 @@ defmodule Soundcheck.MixProject do
       version: @version,
       description: @description,
       # soundcheck runs inside the host project's VM, so this floor stays as
-      # low as the code allows: 1.17 added the `Macro.Env` alias functions
-      # that `Soundcheck.Elixir.ModuleIndex` resolves aliases with.
-      elixir: "~> 1.17",
+      # low as the code allows: 1.18 added the `JSON` module that the JSON
+      # and SARIF renderers encode with.
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       elixirc_paths: elixirc_paths(Mix.env()),

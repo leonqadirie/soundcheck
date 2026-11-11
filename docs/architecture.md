@@ -1443,7 +1443,7 @@ Everything else is **unverifiable**, with a reason from `Soundcheck.Diagnostic.r
 
 | Dependency | Supported | Notes |
 |---|---|---|
-| Elixir | ≥ 1.17 | soundcheck runs inside the host project's VM, so its floor stays as low as the code allows. `Soundcheck.Elixir.ModuleIndex` resolves aliases with `Macro.Env.define_alias/4` and `Macro.Env.expand_alias/4`, which Elixir 1.17 added. LiveView 1.1.30 and 1.2.12 both require `~> 1.15`, Igniter 0.8 requires `~> 1.15`, Credo 1.7.19 requires `>= 1.13.0`, and Sourceror 1.12 requires `~> 1.12` (verified in each `mix.exs`). The scaffold's `elixir: "~> 1.20"` in `mix.exs` must be lowered (deviation D2). |
+| Elixir | ≥ 1.18 | soundcheck runs inside the host project's VM, so its floor stays as low as the code allows. The JSON and SARIF renderers encode with the `JSON` module, which Elixir 1.18 added, so soundcheck declares no JSON dependency. `Soundcheck.Elixir.ModuleIndex` resolves aliases with `Macro.Env.define_alias/4` and `Macro.Env.expand_alias/4`, which Elixir 1.17 added. LiveView 1.1.30 and 1.2.12 both require `~> 1.15`, Igniter 0.8 requires `~> 1.15`, Credo 1.7.19 requires `>= 1.13.0`, and Sourceror 1.12 requires `~> 1.12` (verified in each `mix.exs`). The scaffold's `elixir: "~> 1.20"` in `mix.exs` must be lowered (deviation D2). |
 | Phoenix | 1.7, 1.8 | colocated hooks and `current_scope` conventions are 1.8-only |
 | LiveView | 1.1, 1.2 | 1.0 untested; facts read on 1.0 are trusted only for shapes covered by probes |
 | Credo | ~> 1.7 (1.7.19 verified) | |
@@ -1506,7 +1506,7 @@ end
   - a required tree-sitter or oxc dependency, for the adoption cost above;
   - shelling out to Node with acorn, which requires Node at lint time, while Phoenix 1.8 apps often use the esbuild/bun binaries without Node.
 
-**D2. Lower the scaffold's Elixir requirement from `~> 1.20` to `~> 1.17`.** The plugin runs in the host's VM, so its requirement excludes every project on an older Elixir. `~> 1.17` is the lowest version with `Macro.Env.define_alias/4` and `Macro.Env.expand_alias/4`, which the module index resolves aliases with. Rejected: keeping `~> 1.20`, which would exclude most current Phoenix apps, and `~> 1.15`, the floor of LiveView 1.1 and 1.2 and of Igniter (Q6), which would require soundcheck to keep its own alias table.
+**D2. Lower the scaffold's Elixir requirement from `~> 1.20` to `~> 1.17`.** The plugin runs in the host's VM, so its requirement excludes every project on an older Elixir. `~> 1.17` is the lowest version with `Macro.Env.define_alias/4` and `Macro.Env.expand_alias/4`, which the module index resolves aliases with. Rejected: keeping `~> 1.20`, which would exclude most current Phoenix apps, and `~> 1.15`, the floor of LiveView 1.1 and 1.2 and of Igniter (Q6), which would require soundcheck to keep its own alias table. Revised 2026-11-12: the requirement is `~> 1.18`, the lowest version with the `JSON` module, which replaces the Jason dependency in the JSON and SARIF renderers.
 
 **D3. Two analyses from the brief are not implemented, because existing tools report them.**
 - **phx-hook without `id`:** LiveView raises at compile time (section 7.3).

@@ -13,7 +13,7 @@ The name comes from the check musicians run before going live.
 
 ## Installation
 
-Supported versions: Elixir 1.17 or later, Phoenix 1.7 and 1.8, LiveView 1.1 and 1.2, and Credo 1.7.
+Supported versions: Elixir 1.18 or later, Phoenix 1.7 and 1.8, LiveView 1.1 and 1.2, and Credo 1.7.
 
 ### With Igniter
 
