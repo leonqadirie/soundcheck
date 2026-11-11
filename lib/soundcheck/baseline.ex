@@ -21,6 +21,10 @@ defmodule Soundcheck.Baseline do
 
   @type entry :: {String.t(), Path.t(), String.t()}
 
+  @doc "The default baseline path."
+  @spec default_path() :: Path.t()
+  def default_path, do: @default_path
+
   @doc "Sets the fingerprint of every diagnostic."
   @spec fingerprint([Diagnostic.t()]) :: [Diagnostic.t()]
   def fingerprint(diagnostics) do
@@ -72,6 +76,20 @@ defmodule Soundcheck.Baseline do
     do: is_binary(id) and is_binary(file) and is_binary(fingerprint)
 
   defp entry?(_ast), do: false
+
+  @doc """
+  The `entries` a run could not have reproduced: those whose rule id is not
+  in `ids`, or whose file is not in `files`. `files` is `:all` when the run
+  analyzed the whole project.
+  """
+  @spec outside([entry()], [String.t()], [Path.t()] | :all) :: [entry()]
+  def outside(entries, ids, files) do
+    files = if files == :all, do: :all, else: MapSet.new(files, &relative/1)
+
+    Enum.reject(entries, fn {id, file, _fingerprint} ->
+      id in ids and (files == :all or MapSet.member?(files, file))
+    end)
+  end
 
   @doc "Drops diagnostics whose fingerprint is in `baseline`, fingerprinting them first."
   @spec reject([Diagnostic.t()], MapSet.t(String.t())) :: [Diagnostic.t()]

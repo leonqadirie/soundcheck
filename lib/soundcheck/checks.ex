@@ -57,6 +57,14 @@ defmodule Soundcheck.Checks do
     Soundcheck.Check.Warning.UnscopedLookupByClientParam
   ]
 
+  @doc "Returns every check."
+  @spec all() :: [module()]
+  def all, do: @checks
+
+  @doc "Returns the checks that run by default."
+  @spec defaults() :: [module()]
+  def defaults, do: Enum.filter(@checks, & &1.default?())
+
   @doc "The `checks: %{extra: [...]}` entries for the plugin's default Credo config."
   @spec credo_config() :: String.t()
   def credo_config do
