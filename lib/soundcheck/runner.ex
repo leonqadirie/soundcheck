@@ -7,10 +7,9 @@ defmodule Soundcheck.Runner do
   # kept only in strict mode. Findings come back sorted by location.
 
   alias Soundcheck.Baseline
-  alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.Graph.Input
-  alias Soundcheck.Suppression
+  alias Soundcheck.Rule
 
   defmodule Result do
     @moduledoc false
@@ -61,16 +60,14 @@ defmodule Soundcheck.Runner do
     diagnostics =
       for check <- Keyword.fetch!(opts, :checks),
           params = check_params(check, Map.get(overrides, check, []), strict?),
-          diagnostic <- Diagnostic.normalize(check.analyze(graph, params)),
-          Keyword.fetch!(params, :strict) or not Diagnostic.unverifiable?(diagnostic) do
+          diagnostic <- Rule.run(check, graph, params) do
         diagnostic
       end
 
     %Result{
       diagnostics:
         diagnostics
-        |> Suppression.reject()
-        |> Baseline.reject(baseline(Keyword.fetch!(opts, :baseline)))
+        |> Rule.drop_silenced(baseline(Keyword.fetch!(opts, :baseline)))
         |> Enum.sort_by(&{&1.primary.file, &1.primary.start, &1.id}),
       graph: Graph.summary(graph),
       unparsable: unparsable

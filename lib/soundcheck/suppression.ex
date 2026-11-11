@@ -86,13 +86,13 @@ defmodule Soundcheck.Suppression do
   end
 
   @doc """
-  Removes suppressed diagnostics. `sources` maps a file to its directives;
-  files missing from the map are read from disk.
+  Removes suppressed diagnostics. `load` returns the directives of a file;
+  it runs once for each file a diagnostic names.
   """
-  @spec reject([Diagnostic.t()], %{Path.t() => [directive()]}) :: [Diagnostic.t()]
-  def reject(diagnostics, sources \\ %{}) do
+  @spec reject([Diagnostic.t()], (Path.t() -> [directive()])) :: [Diagnostic.t()]
+  def reject(diagnostics, load \\ &file_directives/1) do
     files = diagnostics |> Enum.flat_map(&files/1) |> Enum.uniq()
-    directives = Map.new(files, &{&1, Map.get_lazy(sources, &1, fn -> file_directives(&1) end)})
+    directives = Map.new(files, &{&1, load.(&1)})
 
     Enum.reject(diagnostics, &suppressed?(&1, directives))
   end
