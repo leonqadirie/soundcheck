@@ -7,7 +7,7 @@ defmodule Soundcheck.CheckCase do
   # rule, and every run-cache entry besides the run's graph is a pure
   # function of its key (a compiled fixture module), so concurrent tests
   # share those entries safely. A test that sets the run's graph
-  # (`run_check/4`, `Soundcheck.Graph.Current.prepare/3`) must pass `async: false`,
+  # (`run_check/4`, `Soundcheck.Graph.Current.prepare/2`) must pass `async: false`,
   # which also empties the cache before each test.
 
   alias Soundcheck.Cache
