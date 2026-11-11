@@ -3,7 +3,8 @@ defmodule Soundcheck.OutputTest do
 
   alias Soundcheck.Check.Warning.UnhandledEvent
   alias Soundcheck.Diagnostic
-  alias Soundcheck.Output.JSON
+  alias Soundcheck.Output.Encoder
+  alias Soundcheck.Output.JSON, as: JSONOutput
   alias Soundcheck.Output.SARIF
   alias Soundcheck.Output.Text
   alias Soundcheck.Span
@@ -41,7 +42,7 @@ defmodule Soundcheck.OutputTest do
   end
 
   test "json carries every location" do
-    [entry] = [diagnostic()] |> JSON.render() |> Jason.decode!()
+    [entry] = [diagnostic()] |> JSONOutput.render() |> JSON.decode!()
 
     assert %{
              "id" => "SC101",
@@ -60,7 +61,7 @@ defmodule Soundcheck.OutputTest do
     sarif =
       [diagnostic(), diagnostic(resolution: {:unverifiable, :css_selector})]
       |> SARIF.render([UnhandledEvent])
-      |> Jason.decode!()
+      |> JSON.decode!()
 
     assert %{"version" => "2.1.0", "runs" => [run]} = sarif
     assert run["columnKind"] == "unicodeCodePoints"
@@ -76,5 +77,27 @@ defmodule Soundcheck.OutputTest do
 
     assert %{"startLine" => 34, "startColumn" => 26, "endColumn" => 30} =
              hd(resolved["locations"])["physicalLocation"]["region"]
+  end
+
+  # Each map holds one key: entries follow map order, which is unspecified.
+  test "the encoder indents by two spaces, one entry or element per line" do
+    assert Encoder.encode([1, %{"a\"" => [nil, "q\n"]}, [], %{}, %{b: %{c: :d}}]) == """
+           [
+             1,
+             {
+               "a\\"": [
+                 null,
+                 "q\\n"
+               ]
+             },
+             [],
+             {},
+             {
+               "b": {
+                 "c": "d"
+               }
+             }
+           ]\
+           """
   end
 end

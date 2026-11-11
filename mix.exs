@@ -63,7 +63,6 @@ defmodule Soundcheck.MixProject do
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:ex_slop, "~> 0.4", only: :dev, runtime: false},
       {:igniter, "~> 0.8", optional: true, runtime: false},
-      {:jason, "~> 1.4"},
       # Differential tests compare soundcheck's HEEx parser against LiveView's.
       {:phoenix_live_view, "~> 1.2", only: :test},
       {:quokka, "~> 2.13", only: [:dev, :test], runtime: false},

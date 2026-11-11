@@ -8,6 +8,7 @@ defmodule Soundcheck.Output.SARIF do
   # Unverifiable findings are `note`s; the rest are `warning`s.
 
   alias Soundcheck.Diagnostic
+  alias Soundcheck.Output.Encoder
   alias Soundcheck.Span
 
   @spec render([Diagnostic.t()], [module()]) :: String.t()
@@ -30,7 +31,7 @@ defmodule Soundcheck.Output.SARIF do
         }
       ]
     }
-    |> Jason.encode!(pretty: true)
+    |> Encoder.encode()
   end
 
   defp rule(check) do
