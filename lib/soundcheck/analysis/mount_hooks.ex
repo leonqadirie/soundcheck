@@ -45,6 +45,22 @@ defmodule Soundcheck.Analysis.MountHooks do
     end
   end
 
+  @doc """
+  Whether some `on_mount/4` clause of `module` may accept `arg`. Returns
+  `false` only when the compiled clauses exist and each one's first
+  pattern is a different atom.
+  """
+  @spec accepts_arg?(module(), term()) :: boolean()
+  def accepts_arg?(module, arg) do
+    case DebugInfo.clauses(module, :on_mount, 4) do
+      {:ok, [_ | _] = clauses} ->
+        Enum.any?(clauses, fn {_meta, [first | _], _guards, _body} -> accepts?(first, arg) end)
+
+      _missing_or_unreadable ->
+        true
+    end
+  end
+
   # A clause whose first pattern is another atom never accepts `arg`; any
   # other pattern may.
   defp accepts?(pattern, arg) when is_atom(pattern), do: pattern == arg

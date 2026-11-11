@@ -11,6 +11,7 @@ defmodule Soundcheck.Checks do
     Soundcheck.Check.Design.UnusedHook,
     Soundcheck.Check.Readability.AssignsDotAccess,
     Soundcheck.Check.Refactor.BareAssignsInTemplate,
+    Soundcheck.Check.Refactor.NavigateAcrossLiveSession,
     Soundcheck.Check.Refactor.StreamCandidate,
     Soundcheck.Check.Refactor.TemplateBoundVariable,
     Soundcheck.Check.Refactor.TemporaryAssignCandidate,
@@ -20,13 +21,18 @@ defmodule Soundcheck.Checks do
     Soundcheck.Check.Warning.EventPayloadMismatch,
     Soundcheck.Check.Warning.FormFieldMismatch,
     Soundcheck.Check.Warning.InvalidSendUpdate,
+    Soundcheck.Check.Warning.LiveRouteWithoutAuthHook,
     Soundcheck.Check.Warning.LiveViewCallbackInComponent,
     Soundcheck.Check.Warning.OptionalAttrWithoutDefault,
+    Soundcheck.Check.Warning.PatchToForeignLiveView,
+    Soundcheck.Check.Warning.PatchWithoutHandleParams,
     Soundcheck.Check.Warning.PossiblyUnsetAssign,
     Soundcheck.Check.Warning.StreamChildWithoutId,
     Soundcheck.Check.Warning.StreamConsumedOutsideFor,
     Soundcheck.Check.Warning.StreamContainerWithoutPhxUpdate,
+    Soundcheck.Check.Warning.SubscribedWithoutHandleInfo,
     Soundcheck.Check.Warning.UndeclaredComponentAttr,
+    Soundcheck.Check.Warning.UndefinedMountHook,
     Soundcheck.Check.Warning.UndefinedStream,
     Soundcheck.Check.Warning.UndefinedUpload,
     Soundcheck.Check.Warning.UnhandledEvent,
@@ -34,7 +40,8 @@ defmodule Soundcheck.Checks do
     Soundcheck.Check.Warning.UnhandledAsyncResult,
     Soundcheck.Check.Warning.UnhandledInfoMessage,
     Soundcheck.Check.Warning.UnhandledServerPushEvent,
-    Soundcheck.Check.Warning.UndefinedHook
+    Soundcheck.Check.Warning.UndefinedHook,
+    Soundcheck.Check.Warning.UnscopedLookupByClientParam
   ]
 
   @doc "The `checks: %{extra: [...]}` entries for the plugin's default Credo config."
