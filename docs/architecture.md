@@ -329,7 +329,7 @@ Facts:
 ```elixir
 defmodule Soundcheck.JS.Extractor.Facts do
   defstruct file: nil,
-            objects: %{},          # brace token index => %{entries, range, span}
+            objects: %{},          # brace byte offset => %Object{entries, range, span}
             bindings: %{},         # name => ref           const Hooks = {...}
             member_assigns: [],    # {target, key, ref}    Hooks.Chart = ...; Hooks["Chart"] = ...
             object_assigns: [],    # {target, [ref]}       Object.assign(Hooks, ...)
