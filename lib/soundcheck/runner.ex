@@ -9,6 +9,7 @@ defmodule Soundcheck.Runner do
   alias Soundcheck.Baseline
   alias Soundcheck.Graph
   alias Soundcheck.Graph.Input
+  alias Soundcheck.Graph.Link
   alias Soundcheck.Rule
 
   defmodule Result do
@@ -53,12 +54,13 @@ defmodule Soundcheck.Runner do
       )
 
     {inputs, unparsable} = Input.load(Keyword.fetch!(opts, :paths))
-    graph = Graph.build(inputs, graph_opts)
+    checks = Keyword.fetch!(opts, :checks)
+    graph = inputs |> Graph.build(graph_opts) |> Link.link(Rule.needs(checks))
     strict? = Keyword.fetch!(opts, :strict)
     overrides = Keyword.fetch!(opts, :check_params)
 
     diagnostics =
-      for check <- Keyword.fetch!(opts, :checks),
+      for check <- checks,
           params = check_params(check, Map.get(overrides, check, []), strict?),
           diagnostic <- Rule.run(check, graph, params) do
         diagnostic

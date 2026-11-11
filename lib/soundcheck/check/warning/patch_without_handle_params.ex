@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: true,
     summary:
       "`push_patch`, `<.link patch>`, and `JS.patch` back to a LiveView that defines no `handle_params/3`, which raises",
@@ -33,8 +34,6 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
       """
     ]
 
-  alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Analysis.Navigation
   alias Soundcheck.Analysis.Routes
   alias Soundcheck.Beam.Introspect
@@ -43,9 +42,9 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, :view} <- LiveModules.all(graph),
+    for {entry, :view} <- Graph.live_modules(graph),
         {:ok, functions} <- [Introspect.functions(entry.name)],
         {:handle_params, 3} not in functions,
         {path, span, anchor} <- Navigation.targets(graph, entry, :patch),

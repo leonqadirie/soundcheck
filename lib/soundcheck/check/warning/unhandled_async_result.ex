@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.UnhandledAsyncResult do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: true,
     summary: "`start_async/3` names with no matching `handle_async/3` clause",
     explanations: [
@@ -41,14 +42,13 @@ defmodule Soundcheck.Check.Warning.UnhandledAsyncResult do
 
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Graph
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, _kind} <- LiveModules.all(graph),
+    for {entry, _kind} <- Graph.live_modules(graph),
         {:ok, starts} <- [Handlers.async_starts(entry.name)],
         {:ok, handlers} <- [Handlers.handler_set(entry.name, :handle_async, routes)],
         start <- starts,

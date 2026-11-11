@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
     category: :design,
     confidence: :medium,
     tier: :semantic,
+    needs: [:live_modules, :routes, :render_index, :js_helpers],
     default: false,
     summary: "`handle_event/3` clauses nothing in the project emits",
     param_defaults: [ignore_events: []],
@@ -36,12 +37,9 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
       ]
     ]
 
-  alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.Hooks
-  alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.NameFilter
@@ -58,8 +56,8 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
   # Every `{module, event}` some emitter reaches, or `:open_world` when any
   # emitter in the project does not resolve.
   defp reached_events(graph) do
-    render_index = Components.render_index(graph)
-    js_helpers = Events.js_helpers(graph)
+    render_index = Graph.render_index(graph)
+    js_helpers = Graph.js_helpers(graph)
 
     expanded =
       for template <- graph.templates,
@@ -114,9 +112,9 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
 
   defp unused(graph, reached, ignore) do
     literals = MapSet.union(string_literals(graph), js_push_names(graph))
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, _kind} <- LiveModules.all(graph),
+    for {entry, _kind} <- Graph.live_modules(graph),
         {:ok, set} <- [Handlers.handler_set(entry.name, :handle_event, routes)],
         set.closed?,
         {:literal, event} <- set.patterns,

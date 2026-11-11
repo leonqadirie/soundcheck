@@ -5,6 +5,7 @@ defmodule Soundcheck.Check.Warning.PatchToForeignLiveView do
     category: :warning,
     confidence: :high,
     tier: :semantic,
+    needs: [:live_modules, :routes],
     default: true,
     summary: "`push_patch` to a route another LiveView renders, which raises",
     explanations: [
@@ -34,8 +35,6 @@ defmodule Soundcheck.Check.Warning.PatchToForeignLiveView do
       """
     ]
 
-  alias Soundcheck.Analysis.LiveModules
-  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Analysis.Navigation
   alias Soundcheck.Analysis.Routes
   alias Soundcheck.Diagnostic
@@ -43,9 +42,9 @@ defmodule Soundcheck.Check.Warning.PatchToForeignLiveView do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = MountHooks.routes(graph)
+    routes = Graph.routes(graph)
 
-    for {entry, :view} <- LiveModules.all(graph),
+    for {entry, :view} <- Graph.live_modules(graph),
         {path, span, anchor} <- Navigation.targets(graph, entry, :patch, [:server]),
         {:ok, segments} <- [Routes.segments(path)],
         [_ | _] = candidates <- [Routes.matching(routes, segments)],

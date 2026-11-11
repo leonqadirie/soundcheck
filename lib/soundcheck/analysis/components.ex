@@ -44,14 +44,18 @@ defmodule Soundcheck.Analysis.Components do
           }
   end
 
-  @doc "Builds the render index: `call_sites/1` plus delegations."
+  @doc """
+  Builds the render index: `call_sites/1` plus delegations. Each module's
+  delegations decode its expanded AST, so modules read in parallel.
+  """
   @spec render_index(Graph.t()) :: Index.t()
   def render_index(%Graph{} = graph) do
     project = MapSet.new(graph.modules, & &1.name)
 
     delegators =
-      for %{name: module} <- graph.modules,
-          {fun, {target, target_fun}} <- delegates(module, project),
+      for {module, delegates} <-
+            parallel_map(graph.modules, &{&1.name, delegates(&1.name, project)}),
+          {fun, {target, target_fun}} <- delegates,
           reduce: %{} do
         acc ->
           Map.update(acc, {:function, target, target_fun}, [{module, fun}], &[{module, fun} | &1])
@@ -81,6 +85,12 @@ defmodule Soundcheck.Analysis.Components do
           reduce: seen ++ [function],
           do: (acc -> delegated_functions(target, project, acc))
     end
+  end
+
+  defp parallel_map(items, fun) do
+    items
+    |> Task.async_stream(fun, ordered: true, timeout: :infinity)
+    |> Enum.map(fn {:ok, result} -> result end)
   end
 
   # `{fun, {target_module, target_fun}}` for each arity-1 function of
@@ -150,10 +160,17 @@ defmodule Soundcheck.Analysis.Components do
   def call_sites(%Graph{} = graph) do
     modules = Map.new(graph.modules, &{&1.name, &1})
 
+    # Reading captures decodes the owner's expanded AST, so owners read in
+    # parallel.
+    captures =
+      for(%Template{owner: {owner, _fun}} <- graph.templates, uniq: true, do: owner)
+      |> parallel_map(&{&1, captures(&1)})
+      |> Map.new()
+
     sites =
       for %Template{owner: {owner, _fun}} = template <- graph.templates,
           %{} = entry <- [Map.get(modules, owner)],
-          captures = captures(owner),
+          captures = Map.fetch!(captures, owner),
           element <- components(template.root),
           {:ok, callee} <- [resolve(element, entry, captures)],
           reduce: %{} do

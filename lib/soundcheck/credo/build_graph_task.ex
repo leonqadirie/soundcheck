@@ -31,7 +31,7 @@ defmodule Soundcheck.Credo.BuildGraphTask do
         js_paths -> [js_paths: js_paths]
       end
 
-    graph = Graph.prepare(inputs, graph_opts)
+    graph = Graph.Current.prepare(inputs, graph_opts)
     Execution.put_assign(exec, "soundcheck.graph", Graph.summary(graph))
   end
 end
