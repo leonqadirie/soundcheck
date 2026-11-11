@@ -35,7 +35,7 @@ defmodule Soundcheck.JS.Extractor do
 
   defmodule Push do
     @moduledoc false
-    # A `pushEvent` or `pushEventTo` call. `offset` is the token index of the
+    # A `pushEvent` or `pushEventTo` call. `offset` is the byte offset of the
     # call, which `Soundcheck.JS.Extractor.events_in/2` compares against
     # object ranges.
     @enforce_keys [:kind, :event, :target, :offset, :span]
@@ -52,7 +52,7 @@ defmodule Soundcheck.JS.Extractor do
 
   defmodule Handle do
     @moduledoc false
-    # A `handleEvent` call. `offset` is the token index of the call.
+    # A `handleEvent` call. `offset` is the byte offset of the call.
     @enforce_keys [:event, :offset, :span]
     defstruct [:event, :offset, :span]
 
@@ -65,8 +65,8 @@ defmodule Soundcheck.JS.Extractor do
 
   defmodule Object do
     @moduledoc false
-    # An object literal, keyed in `Facts.objects` by the token index of its
-    # `{`. `range` holds the token indexes of its braces.
+    # An object literal, keyed in `Facts.objects` by the byte offset of its
+    # `{`. `range` holds the byte offsets its braces span.
     @enforce_keys [:entries, :range, :span]
     defstruct [:entries, :range, :span]
 
@@ -190,23 +190,21 @@ defmodule Soundcheck.JS.Extractor do
     index = LineIndex.new(source)
     position = Keyword.get(opts, :position, &LineIndex.position(index, &1))
 
-    tokens = source |> Lexer.tokenize() |> List.to_tuple()
+    tokens = Lexer.tokenize(source)
 
     ctx = %{
-      tokens: tokens,
-      matches: matches(tokens),
       file: file,
       position: position,
       this_aliases: this_aliases(tokens),
       this_fields: this_fields(tokens)
     }
 
-    0..(tuple_size(tokens) - 1)//1
-    |> Enum.reduce(%Facts{file: file}, &visit(&2, &1, ctx))
+    tokens
+    |> scan(nil, %Facts{file: file}, ctx)
     |> in_source_order()
   end
 
-  # `visit/3` prepends to the list facts; readers expect source order.
+  # The recognizers prepend to the list facts; readers expect source order.
   defp in_source_order(%Facts{} = facts) do
     %{
       facts
@@ -336,154 +334,200 @@ defmodule Soundcheck.JS.Extractor do
     do: %Names{names: Map.merge(a.names, b.names), open: Enum.uniq(a.open ++ b.open)}
 
   # ── Recognition ──
+  #
+  # `scan/4` tries the recognizers at every token, so a form nested inside
+  # another (a binding inside a hook method) is found too. Each recognizer
+  # takes the tokens from the current one to the end of the file and returns
+  # updated facts when they start the form it handles, or `nil` to let the
+  # next one try. `prev` is the token before the current one.
 
-  # Each recognizer returns updated facts when the tokens at `i` start the
-  # form it handles, or `nil` to let the next one try.
-  defp visit(facts, i, ctx) do
-    tokens = window(ctx, i, 5)
+  @open_brackets ["(", "[", "{"]
+  @close_brackets [")", "]", "}"]
+  @declarators ["const", "let", "var"]
+  @hook_calls ["pushEvent", "pushEventTo", "handleEvent"]
 
-    Enum.find_value(
-      [&declaration/4, &module_syntax/4, &live_socket_call/4, &event_call/4],
-      facts,
-      & &1.(facts, tokens, i, ctx)
-    )
+  # How many tokens after `import` may precede `from "source"`.
+  @import_clause_limit 65
+
+  defp scan([], _prev, facts, _ctx), do: facts
+
+  defp scan([token | rest] = tokens, prev, facts, ctx) do
+    facts =
+      declaration(tokens, prev, facts, ctx) || module_syntax(tokens, facts, ctx) ||
+        live_socket_call(tokens, facts, ctx) || event_call(tokens, facts, ctx) || facts
+
+    scan(rest, token, facts, ctx)
   end
 
-  defp declaration(facts, tokens, i, ctx) do
-    case tokens do
-      [{:ident, kw, _, _}, {:ident, name, _, _}, {:punct, "=", _, _} | _]
-      when kw in ["const", "let", "var"] ->
-        %{facts | bindings: Map.put(facts.bindings, name, value_ref(ctx, i + 3))}
-        |> register_objects(ctx, i + 3)
-
-      [{:ident, target, _, _}, {:punct, ".", _, _}, {:ident, key, _, _}, {:punct, "=", _, _} | _] ->
-        if not after_dot?(ctx, i), do: member_assign(facts, ctx, target, key, i + 4)
-
-      [
-        {:ident, target, _, _},
-        {:punct, "[", _, _},
-        {:string, key, _, _},
-        {:punct, "]", _, _},
-        {:punct, "=", _, _}
-      ] ->
-        if not after_dot?(ctx, i), do: member_assign(facts, ctx, target, key, i + 5)
-
-      [
-        {:ident, "Object", _, _},
-        {:punct, ".", _, _},
-        {:ident, "assign", _, _},
-        {:punct, "(", _, _} | _
-      ] ->
-        object_assign(facts, ctx, i + 3)
-
-      _other ->
-        nil
-    end
+  defp declaration(
+         [{:ident, kw, _, _}, {:ident, name, _, _}, {:punct, "=", _, _} | value],
+         _prev,
+         facts,
+         ctx
+       )
+       when kw in @declarators do
+    %{facts | bindings: Map.put(facts.bindings, name, value_ref(value))}
+    |> register_objects(value, ctx)
   end
 
-  defp module_syntax(facts, tokens, i, ctx) do
-    case tokens do
-      [{:ident, "import", _, _} | _] -> import_decl(facts, ctx, i + 1)
-      [{:ident, "export", _, _} | _] -> export_decl(facts, ctx, i + 1)
-      _other -> nil
-    end
+  defp declaration(
+         [{:ident, target, _, _}, {:punct, ".", _, _}, {:ident, key, _, _}, {:punct, "=", _, _}] ++
+           value,
+         prev,
+         facts,
+         ctx
+       ) do
+    if not dot?(prev), do: member_assign(facts, ctx, target, key, value)
   end
 
-  defp live_socket_call(facts, tokens, i, ctx) do
-    case tokens do
-      [{:ident, "new", _, _}, {:ident, _, _, _} | _] ->
-        with {:ok, open, start} <- live_socket_constructor(ctx, i + 1),
-             do: live_socket(facts, ctx, open, start)
-
-      [
-        {:ident, "window", _, _},
-        {:punct, ".", _, _},
-        {:ident, "addEventListener", _, _},
-        {:punct, "(", _, _},
-        {kind, "phx:" <> event, start, stop}
-      ]
-      when kind in [:string, :template] ->
-        listener = %WindowListener{event: event, span: span(ctx, start, stop)}
-        %{facts | window_listeners: [listener | facts.window_listeners]}
-
-      _other ->
-        nil
-    end
+  defp declaration(
+         [
+           {:ident, target, _, _},
+           {:punct, "[", _, _},
+           {:string, key, _, _},
+           {:punct, "]", _, _},
+           {:punct, "=", _, _} | value
+         ],
+         prev,
+         facts,
+         ctx
+       ) do
+    if not dot?(prev), do: member_assign(facts, ctx, target, key, value)
   end
+
+  defp declaration(
+         [
+           {:ident, "Object", _, _},
+           {:punct, ".", _, _},
+           {:ident, "assign", _, _} | [{:punct, "(", _, _} | _] = call
+         ],
+         _prev,
+         facts,
+         ctx
+       ), do: object_assign(facts, ctx, call)
+
+  defp declaration(_tokens, _prev, _facts, _ctx), do: nil
+
+  defp module_syntax([{:ident, "import", _, _} | rest], facts, _ctx), do: import_decl(facts, rest)
+
+  defp module_syntax([{:ident, "export", _, _} | rest], facts, ctx),
+    do: export_decl(facts, rest, ctx)
+
+  defp module_syntax(_tokens, _facts, _ctx), do: nil
+
+  defp live_socket_call(
+         [{:ident, "new", _, _}, {:ident, _, _, _} | _] = [_new | rest],
+         facts,
+         ctx
+       ) do
+    with {:ok, call, start} <- live_socket_constructor(rest),
+         do: live_socket(facts, ctx, call, start)
+  end
+
+  defp live_socket_call(
+         [
+           {:ident, "window", _, _},
+           {:punct, ".", _, _},
+           {:ident, "addEventListener", _, _},
+           {:punct, "(", _, _},
+           {kind, "phx:" <> event, start, stop} | _
+         ],
+         facts,
+         ctx
+       )
+       when kind in [:string, :template] do
+    listener = %WindowListener{event: event, span: span(ctx, start, stop)}
+    %{facts | window_listeners: [listener | facts.window_listeners]}
+  end
+
+  defp live_socket_call(_tokens, _facts, _ctx), do: nil
 
   # `LiveSocket(` or a qualified `A.B.LiveSocket(` after `new`: returns the
-  # index of the opening paren and the start offset of `LiveSocket`.
-  defp live_socket_constructor(ctx, at) do
-    case {token(ctx, at), token(ctx, at + 1)} do
-      {{:ident, "LiveSocket", start, _}, {:punct, "(", _, _}} -> {:ok, at + 1, start}
-      {{:ident, _, _, _}, {:punct, ".", _, _}} -> live_socket_constructor(ctx, at + 2)
-      _other -> nil
-    end
+  # tokens from the opening paren on and the start offset of `LiveSocket`.
+  defp live_socket_constructor([
+         {:ident, "LiveSocket", start, _} | [{:punct, "(", _, _} | _] = call
+       ]), do: {:ok, call, start}
+
+  defp live_socket_constructor([{:ident, _, _, _}, {:punct, ".", _, _} | rest]),
+    do: live_socket_constructor(rest)
+
+  defp live_socket_constructor(_tokens), do: nil
+
+  defp event_call(
+         [
+           {:ident, receiver, _, _},
+           {:punct, ".", _, _},
+           {:ident, name, start, _} | [{:punct, "(", _, _} | _] = call
+         ],
+         facts,
+         ctx
+       )
+       when name in @hook_calls do
+    if this?(ctx, receiver), do: hook_call(facts, ctx, name, call, start)
   end
 
-  defp event_call(facts, tokens, i, ctx) do
-    case tokens do
-      [
-        {:ident, receiver, _, _},
-        {:punct, ".", _, _},
-        {:ident, call, start, _},
-        {:punct, "(", _, _} | _
-      ]
-      when call in ["pushEvent", "pushEventTo", "handleEvent"] ->
-        if this?(ctx, receiver), do: hook_call(facts, ctx, call, i + 3, start)
+  defp event_call(
+         [
+           {:ident, receiver, _, _},
+           {:punct, ".", _, _},
+           {:ident, field, _, _},
+           {:punct, ".", _, _},
+           {:ident, name, start, _} | [{:punct, "(", _, _} | _] = call
+         ],
+         facts,
+         ctx
+       )
+       when name in @hook_calls do
+    if this?(ctx, receiver) and field in ctx.this_fields,
+      do: hook_call(facts, ctx, name, call, start)
+  end
 
-      [
-        {:ident, receiver, _, _},
-        {:punct, ".", _, _},
-        {:ident, field, _, _},
-        {:punct, ".", _, _},
-        {:ident, call, start, _}
-      ]
-      when call in ["pushEvent", "pushEventTo", "handleEvent"] ->
-        if this_field_call?(ctx, receiver, field, i + 5),
-          do: hook_call(facts, ctx, call, i + 5, start)
+  defp event_call(_tokens, _facts, _ctx), do: nil
+
+  defp member_assign(facts, ctx, target, key, value) do
+    %{facts | member_assigns: [{target, key, value_ref(value)} | facts.member_assigns]}
+    |> register_objects(value, ctx)
+  end
+
+  # `call` starts at the opening paren of `Object.assign(target, ...sources)`.
+  defp object_assign(facts, ctx, call) do
+    case arguments(call) do
+      {[[{:ident, target, _, _}] | sources], _last} ->
+        refs = Enum.map(sources, &value_ref/1)
+        facts = %{facts | object_assigns: [{target, refs} | facts.object_assigns]}
+        Enum.reduce(sources, facts, &register_objects(&2, &1, ctx))
 
       _other ->
-        nil
+        facts
     end
   end
 
-  defp member_assign(facts, ctx, target, key, value_at) do
-    %{facts | member_assigns: [{target, key, value_ref(ctx, value_at)} | facts.member_assigns]}
-    |> register_objects(ctx, value_at)
-  end
+  # `call` starts at the opening paren of `LiveSocket(url, Socket, opts)`.
+  defp live_socket(facts, ctx, call, start) do
+    {args, last} = arguments(call)
+    span = span(ctx, start, token_stop(last))
 
-  defp object_assign(facts, ctx, open) do
-    with [{from, to} | rest] when to == from + 1 <- arg_ranges(ctx, open),
-         {:ident, target, _, _} <- token(ctx, from) do
-      refs = for {start, _to} <- rest, do: value_ref(ctx, start)
-      facts = %{facts | object_assigns: [{target, refs} | facts.object_assigns]}
-      Enum.reduce(rest, facts, fn {start, _to}, facts -> register_objects(facts, ctx, start) end)
-    else
-      _other -> facts
-    end
-  end
-
-  defp live_socket(facts, ctx, open, start) do
-    stop = token_stop(ctx, Map.get(ctx.matches, open, open))
-
-    case arg_ranges(ctx, open) do
-      [_url, _socket, {from, _to} | _] ->
-        socket = %LiveSocket{hooks: hooks_option(ctx, from), span: span(ctx, start, stop)}
-        register_objects(%{facts | live_sockets: [socket | facts.live_sockets]}, ctx, from)
+    case args do
+      [_url, _socket, opts | _] ->
+        socket = %LiveSocket{hooks: hooks_option(opts), span: span}
+        register_objects(%{facts | live_sockets: [socket | facts.live_sockets]}, opts, ctx)
 
       _fewer ->
-        socket = %LiveSocket{hooks: nil, span: span(ctx, start, stop)}
+        socket = %LiveSocket{hooks: nil, span: span}
         %{facts | live_sockets: [socket | facts.live_sockets]}
     end
   end
 
   # The `hooks` value inside the options object literal, or
   # `{:options, ref}` when the options are a variable the registry resolves.
-  defp hooks_option(ctx, at) do
-    case value_ref(ctx, at) do
-      {:object, open} -> hooks_entry(object_entries(ctx, open))
-      other -> {:options, other}
+  defp hooks_option(opts) do
+    case value_ref(opts) do
+      {:object, _id} ->
+        {items, _close} = arguments(opts)
+        items |> entries() |> Enum.map(&elem(&1, 0)) |> hooks_entry()
+
+      other ->
+        {:options, other}
     end
   end
 
@@ -494,16 +538,17 @@ defmodule Soundcheck.JS.Extractor do
     end)
   end
 
-  defp hook_call(facts, ctx, call, open, start) do
-    stop = token_stop(ctx, Map.get(ctx.matches, open, open))
-    {first, second} = first_two(arg_ranges(ctx, open))
-    span = span(ctx, start, stop)
+  # `call` starts at the opening paren of the hook call.
+  defp hook_call(facts, ctx, name, call, start) do
+    {args, last} = arguments(call)
+    {first, second} = first_two(args)
+    span = span(ctx, start, token_stop(last))
 
-    case call do
+    case name do
       "pushEvent" ->
         push = %Push{
           kind: :push_event,
-          event: event_arg(ctx, first),
+          event: event_arg(first),
           target: :view,
           offset: start,
           span: span
@@ -514,7 +559,7 @@ defmodule Soundcheck.JS.Extractor do
       "pushEventTo" ->
         push = %Push{
           kind: :push_event_to,
-          event: event_arg(ctx, second),
+          event: event_arg(second),
           target: target_arg(ctx, first),
           offset: start,
           span: span
@@ -523,7 +568,7 @@ defmodule Soundcheck.JS.Extractor do
         %{facts | pushes: [push | facts.pushes]}
 
       "handleEvent" ->
-        handle = %Handle{event: event_arg(ctx, first), offset: start, span: span}
+        handle = %Handle{event: event_arg(first), offset: start, span: span}
         %{facts | handles: [handle | facts.handles]}
     end
   end
@@ -532,40 +577,26 @@ defmodule Soundcheck.JS.Extractor do
   defp first_two([first]), do: {first, nil}
   defp first_two([]), do: {nil, nil}
 
-  defp event_arg(ctx, {from, to}) when to == from + 1 do
-    case token(ctx, from) do
-      {:string, value, _, _} -> {:literal, value}
-      {:template, value, _, _} when is_binary(value) -> {:literal, value}
-      _other -> :dynamic
-    end
-  end
+  defp event_arg([{:string, value, _, _}]), do: {:literal, value}
+  defp event_arg([{:template, value, _, _}]) when is_binary(value), do: {:literal, value}
+  defp event_arg(_arg), do: :dynamic
 
-  defp event_arg(_ctx, _range), do: :dynamic
+  defp target_arg(_ctx, [{:string, selector, _, _}]), do: {:selector, selector}
 
-  defp target_arg(ctx, {from, to}) do
-    case for(i <- from..(to - 1)//1, do: token(ctx, i)) do
-      [{:string, selector, _, _}] ->
-        {:selector, selector}
+  defp target_arg(ctx, [{:ident, receiver, _, _}, {:punct, ".", _, _}, {:ident, "el", _, _}]),
+    do: if(this?(ctx, receiver), do: :self_el, else: :dynamic)
 
-      [{:ident, receiver, _, _}, {:punct, ".", _, _}, {:ident, "el", _, _}] ->
-        if this?(ctx, receiver), do: :self_el, else: :dynamic
-
-      _other ->
-        :dynamic
-    end
-  end
-
-  defp target_arg(_ctx, nil), do: :dynamic
+  defp target_arg(_ctx, _arg), do: :dynamic
 
   # import X from "s" | import {a, b as c} from "s" | import X, {a} from "s"
   # | import * as X from "s"
-  defp import_decl(facts, ctx, i) do
-    case find_from(ctx, i) do
-      {:ok, from_at, source} ->
-        names = import_names(ctx, i, from_at)
-
+  defp import_decl(facts, tokens) do
+    case import_clause_and_source(tokens, @import_clause_limit, []) do
+      {:ok, clause, source} ->
         imports =
-          for {local, imported} <- names, into: facts.imports, do: {local, {source, imported}}
+          for {local, imported} <- import_clause(clause, []),
+              into: facts.imports,
+              do: {local, {source, imported}}
 
         %{facts | imports: imports}
 
@@ -574,20 +605,21 @@ defmodule Soundcheck.JS.Extractor do
     end
   end
 
-  defp find_from(ctx, i) do
-    Enum.reduce_while(i..min(i + 64, tuple_size(ctx.tokens) - 2)//1, :error, fn j, acc ->
-      case {token(ctx, j), token(ctx, j + 1)} do
-        {{:ident, "from", _, _}, {:string, source, _, _}} -> {:halt, {:ok, j, source}}
-        {{:punct, ";", _, _}, _} -> {:halt, acc}
-        _ -> {:cont, acc}
-      end
-    end)
-  end
+  # Splits the tokens after `import` at `from "source"`. Gives up at a `;`
+  # or after `limit` tokens, so a dynamic `import(...)` call does not pick
+  # up the `from` of a later statement.
+  defp import_clause_and_source(
+         [{:ident, "from", _, _}, {:string, source, _, _} | _],
+         _limit,
+         clause
+       ), do: {:ok, Enum.reverse(clause), source}
 
-  defp import_names(ctx, from, to) do
-    tokens = for j <- from..(to - 1)//1, do: token(ctx, j)
-    import_clause(tokens, [])
-  end
+  defp import_clause_and_source([{:punct, ";", _, _}, _next | _], _limit, _clause), do: :error
+
+  defp import_clause_and_source([token, next | rest], limit, clause) when limit > 1,
+    do: import_clause_and_source([next | rest], limit - 1, [token | clause])
+
+  defp import_clause_and_source(_tokens, _limit, _clause), do: :error
 
   defp import_clause([], acc), do: acc
 
@@ -617,221 +649,193 @@ defmodule Soundcheck.JS.Extractor do
   defp named_imports([_token | rest], acc), do: named_imports(rest, acc)
   defp named_imports([], acc), do: acc
 
-  # export default <value> | export const X = <value> | export {a, b as c},
-  # plus the declaration forms `export_shape/2` reads.
-  defp export_decl(facts, ctx, i) do
-    case window(ctx, i, 3) do
-      [{:ident, "default", _, _} | _] ->
-        %{facts | exports: Map.put(facts.exports, :default, value_ref(ctx, i + 1))}
-        |> register_objects(ctx, i + 1)
-
-      [{:ident, kw, _, _}, {:ident, name, _, _}, {:punct, "=", _, _}]
-      when kw in ["const", "let", "var"] ->
-        %{facts | exports: Map.put(facts.exports, name, {:ident, name})}
-
-      [{:punct, "{", _, _} | _] ->
-        close = Map.get(ctx.matches, i, i)
-        tokens = for j <- (i + 1)..(close - 1)//1, do: token(ctx, j)
-
-        exports =
-          for {local, name} <- named_imports(tokens, []),
-              into: facts.exports,
-              do: {local, {:ident, name}}
-
-        %{facts | exports: exports}
-
-      tokens ->
-        export_shape(facts, tokens)
-    end
+  # export default <value> | export const X = <value> | export {a, b as c}
+  # | export [async] function X | export class X, which record `X` with an
+  # opaque value. `export *` and destructuring exports name bindings the
+  # extractor cannot enumerate, so they mark the exports open.
+  defp export_decl(facts, [{:ident, "default", _, _} | value], ctx) do
+    %{facts | exports: Map.put(facts.exports, :default, value_ref(value))}
+    |> register_objects(value, ctx)
   end
 
-  # export [async] function X | export class X record `X` with an opaque
-  # value; `export *` and destructuring exports name bindings the extractor
-  # cannot enumerate, so they mark the exports open.
-  defp export_shape(facts, tokens) do
-    case tokens do
-      [{:ident, kw, _, _}, {:ident, name, _, _} | _] when kw in ["function", "class"] ->
-        %{facts | exports: Map.put(facts.exports, name, :other)}
+  defp export_decl(
+         facts,
+         [{:ident, kw, _, _}, {:ident, name, _, _}, {:punct, "=", _, _} | _],
+         _ctx
+       )
+       when kw in @declarators,
+       do: %{facts | exports: Map.put(facts.exports, name, {:ident, name})}
 
-      [{:ident, "async", _, _}, {:ident, "function", _, _}, {:ident, name, _, _}] ->
-        %{facts | exports: Map.put(facts.exports, name, :other)}
+  defp export_decl(facts, [{:punct, "{", _, _} | _] = tokens, _ctx) do
+    names =
+      case enclosed(tokens) do
+        {:ok, inner, _close, _rest} -> named_imports(inner, [])
+        :error -> []
+      end
 
-      [{:punct, "*", _, _} | _] ->
-        %{facts | exports_open: true}
-
-      [{:ident, kw, _, _}, {:punct, bracket, _, _} | _]
-      when kw in ["const", "let", "var"] and bracket in ["{", "["] ->
-        %{facts | exports_open: true}
-
-      _other ->
-        facts
-    end
+    exports = for {local, name} <- names, into: facts.exports, do: {local, {:ident, name}}
+    %{facts | exports: exports}
   end
+
+  defp export_decl(facts, [{:ident, kw, _, _}, {:ident, name, _, _} | _], _ctx)
+       when kw in ["function", "class"],
+       do: %{facts | exports: Map.put(facts.exports, name, :other)}
+
+  defp export_decl(
+         facts,
+         [{:ident, "async", _, _}, {:ident, "function", _, _}, {:ident, name, _, _} | _],
+         _ctx
+       ), do: %{facts | exports: Map.put(facts.exports, name, :other)}
+
+  defp export_decl(facts, [{:punct, "*", _, _} | _], _ctx), do: %{facts | exports_open: true}
+
+  defp export_decl(facts, [{:ident, kw, _, _}, {:punct, bracket, _, _} | _], _ctx)
+       when kw in @declarators and bracket in ["{", "["], do: %{facts | exports_open: true}
+
+  defp export_decl(facts, _tokens, _ctx), do: facts
 
   # ── Objects ──
 
-  defp value_ref(ctx, at) do
-    case {token(ctx, at), token(ctx, at + 1)} do
-      {{:punct, "{", _, _}, _} -> {:object, at}
-      {{:ident, name, _, _}, next} -> if simple_end?(next), do: {:ident, name}, else: :other
-      _other -> :other
+  # The ref for the value that starts `tokens`: an object literal, or an
+  # identifier that is the whole value.
+  defp value_ref([{:punct, "{", start, _} | _]), do: {:object, start}
+
+  defp value_ref([{:ident, name, _, _} | rest]),
+    do: if(simple_end?(rest), do: {:ident, name}, else: :other)
+
+  defp value_ref(_tokens), do: :other
+
+  defp simple_end?([{:punct, p, _, _} | _]), do: p in [",", ";", ")", "}", "]"]
+  defp simple_end?(_tokens), do: true
+
+  # Records the object literal that starts `tokens`, and every object
+  # literal nested as a value inside it, in `facts.objects`. An unclosed
+  # literal has no entries and spans its opening brace.
+  defp register_objects(facts, [{:punct, "{", start, _} | _] = tokens, ctx) do
+    {items, close} = arguments(tokens)
+    entries = entries(items)
+    stop = token_stop(close)
+
+    object = %Object{
+      entries: Enum.map(entries, &elem(&1, 0)),
+      range: {start, stop},
+      span: span(ctx, start, stop)
+    }
+
+    facts = %{facts | objects: Map.put(facts.objects, start, object)}
+
+    Enum.reduce(entries, facts, fn {_entry, value}, facts ->
+      register_objects(facts, value, ctx)
+    end)
+  end
+
+  defp register_objects(facts, _tokens, _ctx), do: facts
+
+  # Each entry among the comma-separated `items` of an object literal,
+  # with the tokens of its value: `[]` when the entry has no value the
+  # extractor follows.
+  defp entries(items), do: for([_ | _] = item <- items, do: entry(item))
+
+  defp entry([{:punct, "...", _, _} | value]), do: {{:spread, value_ref(value)}, value}
+  defp entry([{:punct, "[", _, _} | _]), do: {:computed, []}
+
+  defp entry([{kind, name, _, _}, {:punct, ":", _, _} | value]) when kind in [:ident, :string],
+    do: {{:key, name, value_ref(value)}, value}
+
+  defp entry([{:ident, name, _, _}]), do: {{:key, name, {:ident, name}}, []}
+
+  defp entry([{:ident, modifier, _, _}, {:ident, name, _, _}, {:punct, "(", _, _} | _])
+       when modifier in ["async", "get", "set"], do: {{:method, name}, []}
+
+  defp entry([{:ident, name, _, _}, {:punct, "(", _, _} | _]), do: {{:method, name}, []}
+  defp entry(_tokens), do: {:computed, []}
+
+  # ── Brackets ──
+  #
+  # A closing bracket pairs with the innermost open one of its kind; a
+  # closer that does not match the innermost open bracket is an ordinary
+  # token.
+
+  # The comma-separated items between the bracket that starts `tokens` and
+  # its match, each a token list, and the closing bracket. An unclosed
+  # bracket has no items and stands in for its own closer.
+  defp arguments([open | _] = tokens) do
+    case enclosed(tokens) do
+      {:ok, inner, close, _rest} -> {split_commas(inner, [], []), close}
+      :error -> {[], open}
     end
   end
 
-  defp simple_end?(nil), do: true
-  defp simple_end?({:punct, p, _, _}), do: p in [",", ";", ")", "}", "]"]
-  defp simple_end?(_token), do: true
+  # The tokens between the bracket that starts `tokens` and its match, the
+  # match, and the tokens after it.
+  defp enclosed([{:punct, open, _, _} | rest]) when open in @open_brackets,
+    do: enclosed(rest, [open], [])
 
-  # Records the object literal at `at`, and every object literal nested as a
-  # value inside it, in `facts.objects`.
-  defp register_objects(facts, ctx, at) do
-    case value_ref(ctx, at) do
-      {:object, open} ->
-        entries = object_entries(ctx, open)
-        close = Map.get(ctx.matches, open, open)
-        start = token_start(ctx, open)
-        stop = token_stop(ctx, close)
+  defp enclosed([], _stack, _inner), do: :error
 
-        object = %Object{entries: entries, range: {start, stop}, span: span(ctx, start, stop)}
-        facts = %{facts | objects: Map.put(facts.objects, open, object)}
+  defp enclosed([{:punct, open, _, _} = token | rest], stack, inner) when open in @open_brackets,
+    do: enclosed(rest, [open | stack], [token | inner])
 
-        Enum.reduce(entries, facts, fn
-          {:key, _name, {:object, nested}}, facts -> register_objects(facts, ctx, nested)
-          {:spread, {:object, nested}}, facts -> register_objects(facts, ctx, nested)
-          _entry, facts -> facts
-        end)
-
-      _other ->
-        facts
+  defp enclosed([{:punct, close, _, _} = token | rest], [open | outer] = stack, inner)
+       when close in @close_brackets do
+    cond do
+      not pair?(open, close) -> enclosed(rest, stack, [token | inner])
+      outer == [] -> {:ok, Enum.reverse(inner), token, rest}
+      true -> enclosed(rest, outer, [token | inner])
     end
   end
 
-  defp object_entries(ctx, open) do
-    for {from, to} <- ranges_between(ctx, open), to > from, do: entry(ctx, from, to)
-  end
+  defp enclosed([token | rest], stack, inner), do: enclosed(rest, stack, [token | inner])
 
-  defp entry(ctx, from, to) do
-    case window(ctx, from, min(3, to - from)) do
-      [{:punct, "...", _, _} | _] ->
-        {:spread, value_ref(ctx, from + 1)}
+  defp pair?("(", ")"), do: true
+  defp pair?("[", "]"), do: true
+  defp pair?("{", "}"), do: true
+  defp pair?(_open, _close), do: false
 
-      [{:punct, "[", _, _} | _] ->
-        :computed
+  # Splits `tokens` at the commas outside any bracket. An item between two
+  # commas may be empty; a trailing comma adds none.
+  defp split_commas([], [], items), do: Enum.reverse(items)
+  defp split_commas([], item, items), do: Enum.reverse([Enum.reverse(item) | items])
 
-      [{kind, name, _, _}, {:punct, ":", _, _} | _] when kind in [:ident, :string] ->
-        {:key, name, value_ref(ctx, from + 2)}
+  defp split_commas([{:punct, ",", _, _} | rest], item, items),
+    do: split_commas(rest, [], [Enum.reverse(item) | items])
 
-      [{:ident, name, _, _}] when to == from + 1 ->
-        {:key, name, {:ident, name}}
+  defp split_commas([{:punct, open, _, _} = token | rest] = tokens, item, items)
+       when open in @open_brackets do
+    case enclosed(tokens) do
+      {:ok, inner, close, rest} ->
+        split_commas(rest, [close | Enum.reverse(inner, [token | item])], items)
 
-      [{:ident, modifier, _, _}, {:ident, name, _, _}, {:punct, "(", _, _}]
-      when modifier in ["async", "get", "set"] ->
-        {:method, name}
-
-      [{:ident, name, _, _}, {:punct, "(", _, _} | _] ->
-        {:method, name}
-
-      _other ->
-        :computed
+      :error ->
+        split_commas(rest, [token | item], items)
     end
   end
 
-  # ── Calls and argument lists ──
-
-  defp arg_ranges(ctx, open), do: ranges_between(ctx, open)
-
-  # Splits the tokens between the bracket at `open` and its match at depth-0
-  # commas, returning `{from, to}` index ranges (`to` exclusive).
-  defp ranges_between(ctx, open) do
-    case Map.fetch(ctx.matches, open) do
-      {:ok, close} -> split_commas(ctx, open + 1, close, open + 1, [])
-      :error -> []
-    end
-  end
-
-  defp split_commas(_ctx, i, close, start, acc) when i >= close do
-    acc = if i > start, do: [{start, close} | acc], else: acc
-    Enum.reverse(acc)
-  end
-
-  defp split_commas(ctx, i, close, start, acc) do
-    case token(ctx, i) do
-      {:punct, ",", _, _} ->
-        split_commas(ctx, i + 1, close, i + 1, [{start, i} | acc])
-
-      {:punct, bracket, _, _} when bracket in ["(", "[", "{"] ->
-        split_commas(ctx, Map.get(ctx.matches, i, i) + 1, close, start, acc)
-
-      _token ->
-        split_commas(ctx, i + 1, close, start, acc)
-    end
-  end
+  defp split_commas([token | rest], item, items), do: split_commas(rest, [token | item], items)
 
   # ── Token helpers ──
-
-  defp matches(tokens) do
-    {matches, _stack} =
-      Enum.reduce(0..(tuple_size(tokens) - 1)//1, {%{}, []}, fn i, {matches, stack} ->
-        case elem(tokens, i) do
-          {:punct, open, _, _} when open in ["(", "[", "{"] ->
-            {matches, [{open, i} | stack]}
-
-          {:punct, close, _, _} when close in [")", "]", "}"] ->
-            close_bracket(matches, stack, close, i)
-
-          _token ->
-            {matches, stack}
-        end
-      end)
-
-    matches
-  end
-
-  # Pairs a closing bracket with the innermost open one; an unbalanced
-  # closer leaves the stack untouched.
-  defp close_bracket(matches, [{open, at} | rest], close, i)
-       when {open, close} in [{"(", ")"}, {"[", "]"}, {"{", "}"}],
-       do: {Map.put(matches, at, i), rest}
-
-  defp close_bracket(matches, stack, _close, _i), do: {matches, stack}
 
   # Names bound to `this` anywhere in the file (`const self = this`).
   defp this_aliases(tokens) do
     for [{:ident, kw, _, _}, {:ident, name, _, _}, {:punct, "=", _, _}, {:ident, "this", _, _}] <-
-          tokens |> Tuple.to_list() |> Enum.chunk_every(4, 1, :discard),
-        kw in ["const", "let", "var"],
+          Enum.chunk_every(tokens, 4, 1, :discard),
+        kw in @declarators,
         do: name
   end
 
   defp this?(ctx, receiver), do: receiver == "this" or receiver in ctx.this_aliases
 
-  defp this_field_call?(ctx, receiver, field, open),
-    do:
-      this?(ctx, receiver) and field in ctx.this_fields and
-        match?({:punct, "(", _, _}, token(ctx, open))
-
   # Fields the file assigns on `this` (`this.hook = hook`).
   defp this_fields(tokens) do
     for [{:ident, "this", _, _}, {:punct, ".", _, _}, {:ident, field, _, _}, {:punct, "=", _, _}] <-
-          tokens |> Tuple.to_list() |> Enum.chunk_every(4, 1, :discard),
+          Enum.chunk_every(tokens, 4, 1, :discard),
         into: MapSet.new(),
         do: field
   end
 
-  defp after_dot?(ctx, i), do: i > 0 and match?({:punct, ".", _, _}, token(ctx, i - 1))
+  defp dot?(token), do: match?({:punct, ".", _, _}, token)
 
-  # Up to `n` tokens starting at `i`; fewer near the end of input.
-  defp window(ctx, i, n) do
-    i..(i + n - 1)//1
-    |> Enum.map(&token(ctx, &1))
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp token(ctx, i) when i >= 0 and i < tuple_size(ctx.tokens), do: elem(ctx.tokens, i)
-  defp token(_ctx, _i), do: nil
-
-  defp token_start(ctx, i), do: ctx |> token(i) |> elem(2)
-  defp token_stop(ctx, i), do: ctx |> token(i) |> elem(3)
+  defp token_stop({_type, _value, _start, stop}), do: stop
 
   defp span(ctx, start, stop), do: Span.new(ctx.file, ctx.position.(start), ctx.position.(stop))
 end
