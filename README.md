@@ -1,5 +1,9 @@
 # Soundcheck
 
+[![Hex.pm](https://img.shields.io/hexpm/v/soundcheck.svg)](https://hex.pm/packages/soundcheck)
+[![HexDocs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/soundcheck)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
+
 Soundcheck is a [Credo](https://github.com/rrrene/credo) plugin for Phoenix LiveView. It finds bugs by checking how callbacks, HEEx templates, and JavaScript hooks work together: an event with no handler, an async task with no result callback, or an assign missing from the first render.
 
 Some checks analyse source code directly. Others read compiled modules to resolve event handlers, components, routes, and mount hooks across files.
