@@ -165,7 +165,7 @@ SC101 warning: `phx-click="add-trak"` has no matching `handle_event/3` clause in
    = help: Did you mean "add-track"?
 ```
 
-The task reads check parameters, enabled and disabled checks, and the plugin's `js_paths` from `.credo.exs`. `--all` and `--only` override check selection while retaining configured parameters. It exits with status 1 if it reports any finding that is not unverifiable.
+The task reads check parameters, enabled and disabled checks, and the plugin's `js_paths` from `.credo.exs`. It reads Elixir sources from `--path`, not from Credo's `files` setting. `--all` and `--only` override check selection while retaining configured parameters. It exits with status 1 if it reports any finding that is not unverifiable.
 
 ### Command options
 
@@ -259,13 +259,44 @@ The plugin scans `assets/js` for `.js`, `.ts`, and `.mjs` hook sources by defaul
 plugins: [{Soundcheck, [js_paths: ["assets/js", "assets/vendor/hooks"]]}]
 ```
 
+### Elixir sources
+
+Two parameters decide which Elixir files soundcheck covers under Credo. Both default to the test directories, `[~r"/test/", "test"]`, and match paths the same way (see [Shared check parameters](#shared-check-parameters)).
+
+| Parameter | Set on | Decides |
+|---|---|---|
+| `graph_excluded_paths` | the plugin | Which of the files Credo loaded soundcheck leaves out of its analysis. A file left out gets no findings and influences none. |
+| `excluded_paths` | each check | Where that check does not report. The files still feed the analysis. |
+
+A file gets a finding when it is in the analysis and outside the check's `excluded_paths`.
+
+The plugin leaves test files out by default because the analysis crosses files: a LiveView in `test/support` that renders a component would otherwise receive that component's events, and soundcheck would report in `lib/` that the test LiveView does not handle them.
+
+| Goal | Configuration |
+|---|---|
+| Analyze application code only | Nothing; this is the default |
+| Analyze and report on LiveViews under `test/` | `graph_excluded_paths: []` on the plugin and `excluded_paths: []` on each check that should report there |
+| Count test code as a place that renders components, without reporting in it | `graph_excluded_paths: []` on the plugin |
+| Keep generated or vendored code out entirely | Add its path to the plugin's `graph_excluded_paths` |
+| Silence a directory but keep it as context for other files | Add its path to the checks' `excluded_paths` |
+
+Setting either parameter replaces its default, so repeat the test entries when you add a path:
+
+```elixir
+plugins: [{Soundcheck, [graph_excluded_paths: [~r"/test/", "test", "lib/my_app_web/generated"]]}]
+```
+
+Paths are relative to the directory Credo runs in. A project inside a directory named `test`, analyzed from above it, must override both parameters.
+
+`mix soundcheck` uses neither parameter: it analyzes the globs `--path` names and reports every finding in them.
+
 ### Shared check parameters
 
 Every check accepts:
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `excluded_paths` | `[~r"/test/", "test"]` | Files to skip. Strings match whole path segments or full file paths; `"test"` skips `test/foo.ex`, but not `contest/foo.ex`. Regexes match the full filename. |
+| `excluded_paths` | `[~r"/test/", "test"]` | Files the check does not report in; they still feed the analysis (see [Elixir sources](#elixir-sources)). Strings match whole path segments or full file paths; `"test"` skips `test/foo.ex`, but not `contest/foo.ex`. Regexes match the full filename. |
 | `strict` | `false` | Include unverifiable findings. For SC001, also require a reason in suppression comments. |
 
 ### Check-specific parameters

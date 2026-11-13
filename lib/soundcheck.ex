@@ -21,6 +21,21 @@ defmodule Soundcheck do
 
       lint: ["compile", "credo --strict"]
 
+  ## Plugin params
+
+    * `js_paths` - directories scanned for `.js`, `.ts`, and `.mjs` hook
+      sources (default `["assets/js"]`).
+    * `graph_excluded_paths` - Elixir files Credo loaded that soundcheck
+      leaves out of its analysis (default `[~r"/test/", "test"]`, the
+      test directories). A file left out gets no findings and influences
+      none: a LiveView in `test/support` does not count as a place that
+      renders a component.
+
+  Each check also takes `excluded_paths`, with the same default. It names
+  the files that check does not report in; those files still feed the
+  analysis. A file gets a finding when it is in the graph and outside the
+  check's `excluded_paths`.
+
   See `docs/architecture.md` for the design.
   """
 
