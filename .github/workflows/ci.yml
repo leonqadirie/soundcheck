@@ -114,7 +114,8 @@ jobs:
       # Force the plugin to recompile so the integration tests exercise the
       # current source rather than a stale cached build.
       - run: rm -rf _build/*/lib/soundcheck
-      - run: mix test
+      # Fails under the coverage threshold `test_coverage` sets in mix.exs.
+      - run: mix test --cover
 
   lint:
     runs-on: ubuntu-latest

@@ -17,6 +17,7 @@ defmodule Soundcheck.MixProject do
       aliases: aliases(),
       elixirc_paths: elixirc_paths(Mix.env()),
       test_ignore_filters: [~r{^test/integration/fixtures/}],
+      test_coverage: test_coverage(),
       deps: deps(),
       hex: [cooldown: "1d"],
       dialyzer: dialyzer(),
@@ -70,6 +71,22 @@ defmodule Soundcheck.MixProject do
       {:reach, "~> 2.8", only: :dev, runtime: false},
       {:simple_sat, "~> 0.1", only: :dev, runtime: false},
       {:stream_data, "~> 1.3", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  # Coverage counts soundcheck's own modules: the compiled fixtures and the
+  # test case templates under test/support are test inputs. The threshold
+  # sits a little under the measured total, so a change that leaves new
+  # code untested fails `mix test --cover`.
+  defp test_coverage do
+    [
+      ignore_modules: [
+        ~r/^SoundcheckFixtures\./,
+        Soundcheck.CacheHint,
+        Soundcheck.CheckCase,
+        Soundcheck.HeexCase
+      ],
+      summary: [threshold: 90]
     ]
   end
 

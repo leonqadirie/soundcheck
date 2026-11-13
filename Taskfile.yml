@@ -95,11 +95,11 @@ tasks:
       - mix test {{.CLI_ARGS}}
 
   test:clean:
-    desc: Recompile soundcheck from scratch, then run the test suite as CI does; pass extra mix test args after --
+    desc: Recompile soundcheck from scratch, then run the test suite with the coverage threshold, as CI does; pass extra mix test args after --
     deps: [deps:get]
     cmds:
       - rm -rf _build/*/lib/soundcheck
-      - mix test {{.CLI_ARGS}}
+      - mix test --cover {{.CLI_ARGS}}
 
   typos:
     desc: Check spelling with typos
