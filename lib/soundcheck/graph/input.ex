@@ -7,6 +7,18 @@ defmodule Soundcheck.Graph.Input do
 
   @type t :: %__MODULE__{file: Path.t(), source: String.t(), ast: Macro.t()}
 
+  # The application sources of a Mix project or an umbrella: the
+  # directories Credo's default config includes, without their tests.
+  @default_globs ["{lib,web}/**/*.ex", "apps/*/{lib,web}/**/*.ex"]
+
+  @doc """
+  The globs of the Elixir sources a graph is built from when nothing
+  names them: `mix soundcheck` without `--path`, and checks that run
+  without the plugin.
+  """
+  @spec default_globs() :: [String.t()]
+  def default_globs, do: @default_globs
+
   @doc """
   Reads and parses, in parallel, every file the `globs` match. Returns the
   inputs in path order and the paths of the files that do not parse.

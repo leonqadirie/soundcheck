@@ -176,7 +176,7 @@ The task reads check parameters, enabled and disabled checks, and the plugin's `
 | `--strict` | Include unverifiable findings |
 | `--format text\|json\|sarif` | Output format; defaults to `text` |
 | `--output FILE` | Write output to a file instead of standard output |
-| `--path GLOB` | Elixir source glob; repeatable; defaults to `lib/**/*.ex` |
+| `--path GLOB` | Elixir source glob; repeatable; defaults to `{lib,web}/**/*.ex` and `apps/*/{lib,web}/**/*.ex` |
 | `--js-path DIR` | JavaScript source directory; repeatable; overrides configured `js_paths` |
 | `--config-file FILE` | Credo configuration file; defaults to `.credo.exs` |
 | `--config-name NAME` | Named Credo configuration; defaults to `default` |

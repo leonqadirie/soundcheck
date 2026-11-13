@@ -39,7 +39,7 @@ defmodule Soundcheck.Graph.Current do
     do: Once.run_shared({__MODULE__, :graph}, fn -> Graph.build(inputs, opts) end)
 
   defp discover do
-    {inputs, _unparsable} = Input.load(["{lib,web}/**/*.ex"])
+    {inputs, _unparsable} = Input.load(Input.default_globs())
     inputs
   end
 end
