@@ -359,18 +359,13 @@ defmodule Soundcheck.Analysis.Assigns do
 
   defp kernel?(_node), do: false
 
-  # Literal atoms and keyword keys name assigned keys; anything else (a map
-  # or a variable) could name any key.
+  # A key argument that names no literal key (a map or a variable) could
+  # name any key.
   defp assign_keys(args, state) do
-    keys =
-      Enum.flat_map(args, fn
-        key when is_atom(key) and not is_nil(key) and not is_boolean(key) -> [key]
-        [{key, _value} | _] = keyword when is_atom(key) -> Keyword.keys(keyword)
-        [key | _] = list when is_atom(key) -> Enum.filter(list, &is_atom/1)
-        _other -> []
-      end)
-
-    if keys == [], do: %{state | open?: true}, else: add_keys(state, keys)
+    case literal_keys(args) do
+      [] -> %{state | open?: true}
+      keys -> add_keys(state, keys)
+    end
   end
 
   defp add_keys(state, keys),
@@ -416,15 +411,19 @@ defmodule Soundcheck.Analysis.Assigns do
   end
 
   @doc """
-  The keys an assigning call's literal arguments name: atoms and
-  keyword-list keys. A map or variable argument names none.
+  The keys an assigning call's key argument names: a literal atom, the keys
+  of a keyword list, or the atoms of a list (`assign_async/3`). A map or
+  variable names none.
+
+  The key argument comes first in a piped call and second otherwise, after
+  the socket or assigns. Later arguments are values: the `:short` of
+  `assign(socket, :mode, :short)` names no key.
   """
   @spec literal_keys([Macro.t()]) :: [atom()]
-  def literal_keys(args) do
-    Enum.flat_map(args, fn
-      key when is_atom(key) and not is_nil(key) and not is_boolean(key) -> [key]
-      [{key, _value} | _] = keyword when is_atom(key) -> Keyword.keys(keyword)
-      _other -> []
-    end)
-  end
+  def literal_keys(args), do: args |> Enum.take(2) |> Enum.find_value([], &key_argument/1)
+
+  defp key_argument(key) when is_atom(key) and not is_nil(key) and not is_boolean(key), do: [key]
+  defp key_argument([{key, _value} | _] = keyword) when is_atom(key), do: Keyword.keys(keyword)
+  defp key_argument([key | _] = list) when is_atom(key), do: Enum.filter(list, &is_atom/1)
+  defp key_argument(_other), do: nil
 end
