@@ -28,6 +28,51 @@ defmodule Soundcheck.Analysis.HandlersTest do
       refute Handlers.handles?(set, {:atom, :load_stats})
     end
 
+    test "reads the literal a `=` in an event head binds" do
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_event, [])
+
+      assert [{:literal, "save"}, _binary] = set.patterns
+    end
+
+    test "an event head that is neither a literal, a prefix, nor a variable accepts everything" do
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_event, [])
+
+      assert [_save, :any] = set.patterns
+      assert Handlers.handles?(set, {:literal, "anything"})
+    end
+
+    test "a guard that is not a chain of literal comparisons leaves the clause open" do
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.GuardedEventsLive, :handle_event, [])
+      assert set.patterns == [:any]
+    end
+
+    test "several `when` guards leave the clause open" do
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.TwoGuardsLive, :handle_event, [])
+      assert set.patterns == [:any]
+    end
+
+    test "reads tuple, tagged tuple, `=`, and map message patterns" do
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_info, [])
+
+      assert set.patterns == [
+               {:tagged, :loaded, 3},
+               {:tuple, 2},
+               {:tuple, 4},
+               {:atom, :tick},
+               :other
+             ]
+    end
+
+    test "an untagged tuple pattern accepts every tagged message of its size" do
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_info, [])
+
+      assert Handlers.handles?(set, {:tagged, :anything, 2})
+      assert Handlers.handles?(set, {:tagged, :DOWN, 4})
+      assert Handlers.handles?(set, {:tagged, :loaded, 3})
+      refute Handlers.handles?(set, {:tagged, :saved, 3})
+      refute Handlers.handles?(set, {:atom, :ping})
+    end
+
     test "a catch-all clause accepts everything" do
       {:ok, set} = Handlers.handler_set(SoundcheckFixtures.CatchAllLive, :handle_info, [])
       assert Handlers.handles?(set, {:atom, :whatever})
@@ -92,6 +137,19 @@ defmodule Soundcheck.Analysis.HandlersTest do
              starts,
              &(&1.call == "start_async" and is_integer(&1.line) and is_nil(&1.column))
            )
+  end
+
+  test "self_sends/1 reads tagged tuples of any size and skips dynamic messages and other pids" do
+    {:ok, sends} = Handlers.self_sends(SoundcheckFixtures.PatternsLive)
+
+    assert Enum.map(sends, &{&1.call, &1.message}) == [{"send", {:tagged, :done, 3}}]
+  end
+
+  test "map_pattern_pairs/1 reads both sides of a `=` and no pairs from other patterns" do
+    pattern = quote(do: %{"id" => id} = %{"name" => name})
+
+    assert [{"id", {:id, _, _}}, {"name", {:name, _, _}}] = Handlers.map_pattern_pairs(pattern)
+    assert Handlers.map_pattern_pairs(quote(do: params)) == []
   end
 
   test "self_sends/1 finds messages sent to self" do
