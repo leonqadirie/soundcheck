@@ -65,11 +65,13 @@ jobs:
   # No Hex API key is stored: with `id-token: write` and no `HEX_API_KEY`,
   # `mix hex.publish` exchanges the job's OIDC token for a short-lived token
   # that can only publish this package. The package's workload identity on
-  # hex.pm must name this repository and workflow.
+  # hex.pm must name this repository, this workflow file, and the `hex`
+  # environment; hex.pm requires an environment for a public repository.
   publish:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
+    environment: hex
     permissions:
       contents: read
       id-token: write
