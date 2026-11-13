@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/leonqadirie/soundcheck/compare/v0.1.0...v0.2.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* under Credo, files in test directories no longer enter the graph. A project that sets a check's excluded_paths to [] to analyze LiveViews under test/ must also set the plugin's graph_excluded_paths, for example {Soundcheck, [graph_excluded_paths: []]}.
+
+### Bug Fixes
+
+* leave test files out of the graph Credo builds ([#18](https://github.com/leonqadirie/soundcheck/issues/18)) ([88c6951](https://github.com/leonqadirie/soundcheck/commit/88c695179a31bb1e6e2f4f2838538bb621210c3f))
+* read one set of default sources in every mode ([#17](https://github.com/leonqadirie/soundcheck/issues/17)) ([bcfc2c6](https://github.com/leonqadirie/soundcheck/commit/bcfc2c6e3e53ed0af6596e8421eef0f77a5ecc0d))
+* stop counting atom values as assigned keys ([#13](https://github.com/leonqadirie/soundcheck/issues/13)) ([97e1757](https://github.com/leonqadirie/soundcheck/commit/97e175716d39830edae3ea30ef1f3a97ce7da50b))
+
 ## 0.1.0 (2026-11-11)
 
 
