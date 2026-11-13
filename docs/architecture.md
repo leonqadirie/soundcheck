@@ -86,7 +86,7 @@ flowchart LR
 ### Data flow
 
 1. **Init.** `Soundcheck.init/1` (the Credo plugin callback) starts the cache owner, clears the previous run's tables, registers the default config, and inserts `Soundcheck.Credo.BuildGraphTask` at the front of the `:run_analysis` group of the `suggest` and `diff` command pipelines.
-2. **Discover.** The build task takes Credo's loaded source files from `Credo.Execution.get_source_files/1`. It then finds `.heex` files through `embed_templates` calls and LiveView colocation conventions, and JavaScript files through the `js_paths` plugin parameter.
+2. **Discover.** The build task takes Credo's loaded source files from `Credo.Execution.get_source_files/1`, without those under the plugin's `graph_excluded_paths` param (default: test directories), so the graph holds the application sources `mix soundcheck` reads by default (`Soundcheck.Graph.Input.default_globs/0`). It then finds `.heex` files through `embed_templates` calls and LiveView colocation conventions, and JavaScript files through the `js_paths` plugin parameter.
 3. **Parse.** Each file is parsed in parallel into per-file facts. Facts are cached by content hash, in memory and on disk under `_build/<env>/soundcheck/`.
 4. **Enrich.** If the project is compiled, the builder reads expanded ASTs from `debug_info` chunks and probes compiled modules with `__components__/0`, `Phoenix.Router.routes/1`, and `__info__/1`.
 5. **Link.** The builder resolves component call sites, event emitters to target modules to handler clauses, hook usages to hook definitions, and routes to LiveViews. Every edge records whether it is resolved or unverifiable, and why.
@@ -1004,7 +1004,7 @@ One gap remains: `phx-hook` passed to a function component that forwards it thro
 
 - Matchers accept atoms (exact) or regexes.
 - Module names are alias-resolved before matching.
-- Most checks take `excluded_paths`, defaulting to `Soundcheck.PathFilter.default_excluded_paths/0` (`[~r"/test/", "test"]`).
+- Most checks take `excluded_paths`, defaulting to `Soundcheck.PathFilter.default_excluded_paths/0` (`[~r"/test/", "test"]`). It names the files a check does not report in. The plugin's `graph_excluded_paths` has the same default and names the files the graph leaves out: those get no findings and influence none.
 - Team conventions are check params, not separate checks.
 
 ### 8.1 Plugin params
@@ -1016,6 +1016,7 @@ One gap remains: `phx-hook` passed to a function component that forwards it thro
   plugins: [{Soundcheck, [
     strict: false,                         # surface unverifiable findings
     js_paths: ["assets/js"],
+    graph_excluded_paths: [~r"/test/", "test"], # Credo-loaded files the graph leaves out
     heex_paths: ["lib/**/*.heex"],
     live_view_use_patterns: [~r/Web$/],    # `use MyAppWeb, :live_view`
     baseline: ".soundcheck_baseline.exs",  # nil disables

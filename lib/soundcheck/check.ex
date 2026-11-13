@@ -49,7 +49,9 @@ defmodule Soundcheck.Check do
   @rule_options @required_rule_options ++ [:tier_note, :needs]
 
   @param_docs [
-    excluded_paths: "Paths to skip (atoms, binaries as path segments, or regexes).",
+    excluded_paths:
+      "Paths the check does not report in (binaries as path segments, or regexes). " <>
+        "The files still feed the analysis; the plugin's `graph_excluded_paths` leaves files out of it.",
     strict: "Unused."
   ]
 

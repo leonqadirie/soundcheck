@@ -33,6 +33,10 @@ On an uncompiled project, SC000 (`Soundcheck.Check.Consistency.Configuration`) r
 
 Only high-confidence checks run by default. Don't guess check names: the checks table in the README (`deps/soundcheck/README.md` inside a consuming project) lists every check, its default, and its parameters, plus a block that enables all opt-in checks.
 
+## Which files are covered
+
+Under `mix credo`, soundcheck leaves test directories out of its analysis (the plugin's `graph_excluded_paths` param) and each check reports nothing in them (the check's `excluded_paths` param). To analyze LiveViews under `test/`, set both to `[]`. `mix soundcheck` uses neither: it analyzes the globs `--path` names.
+
 ## Reading a finding
 
 Messages end with the rule id, such as `(SC101)`. A finding inside a `.heex` file is reported at the owning module's `embed_templates` call, and its message starts with the template path, line, and column; edit the template, not the module. Hook findings name the JavaScript file and line in the message.

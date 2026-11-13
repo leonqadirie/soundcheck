@@ -25,6 +25,13 @@ defmodule Soundcheck.PluginIntegrationTest do
     assert %{modules: 2, templates: 1} = Credo.Execution.get_assign(exec, "soundcheck.graph")
   end
 
+  test "the graph leaves out files under the plugin's graph_excluded_paths" do
+    exec = run_credo(["--format", "oneline", "--config-name", "plugin_defaults"])
+
+    assert %{modules: 0, templates: 0, js_files: 1} =
+             Credo.Execution.get_assign(exec, "soundcheck.graph")
+  end
+
   test "default checks report through Credo" do
     exec = run_credo()
 
