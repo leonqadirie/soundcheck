@@ -31,7 +31,8 @@ defmodule Soundcheck.Runner do
   @doc """
   Options:
 
-    * `:paths` - globs of Elixir sources (default `["lib/**/*.ex"]`)
+    * `:paths` - globs of Elixir sources (default
+      `Soundcheck.Graph.Input.default_globs/0`)
     * `:js_paths` - JavaScript directories (default: `Soundcheck.Graph.build/2`'s)
     * `:checks` - check modules to run (default `Soundcheck.Checks.defaults/0`)
     * `:check_params` - a map from check module to params that override its
@@ -46,7 +47,7 @@ defmodule Soundcheck.Runner do
 
     opts =
       Keyword.validate!(opts,
-        paths: ["lib/**/*.ex"],
+        paths: Input.default_globs(),
         checks: Soundcheck.Checks.defaults(),
         check_params: %{},
         strict: false,

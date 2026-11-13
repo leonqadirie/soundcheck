@@ -22,7 +22,8 @@ defmodule Mix.Tasks.Soundcheck do
     * `--all` - run every check, not only the default ones
     * `--only` - comma-separated check ids to run, such as `SC101,SC1002`
     * `--strict` - also report unverifiable findings
-    * `--path` - a glob of Elixir sources, repeatable (default `lib/**/*.ex`)
+    * `--path` - a glob of Elixir sources, repeatable (default: `lib` and
+      `web`, also under `apps/*` in an umbrella)
     * `--js-path` - a JavaScript directory, repeatable (default `assets/js`)
     * `--no-compile` - do not compile; load the existing build as it is
     * `--config-file` - the Credo config to read (default `.credo.exs`)
