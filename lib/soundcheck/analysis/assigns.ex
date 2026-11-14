@@ -5,8 +5,9 @@ defmodule Soundcheck.Analysis.Assigns do
   #
   # The interpreter tracks the keys an expression may assign, along every
   # path, for one context: the disconnected (HTTP) or the connected
-  # (websocket) run of `mount/3`. `if connected?(socket)` and its negations
-  # pick the branch for the context; any other branch joins.
+  # (websocket) run of `mount/3`. `if connected?(socket)`, its negations, and
+  # compounds that the context decides (`connected?(socket) and flag?()` when
+  # disconnected) pick the branch for the context; any other branch joins.
   #
   # Most closures are skipped: `assign_async/3` and `assign_new/3` functions
   # run later or not at all. A closure given to `then/2`, or to an `Enum`,
@@ -22,6 +23,7 @@ defmodule Soundcheck.Analysis.Assigns do
   # away never renders, so joins drop halted paths, and a result is `halted?`
   # only when every path halts.
 
+  alias Soundcheck.Analysis.Connected
   alias Soundcheck.Beam.DebugInfo
   alias Soundcheck.Graph
   alias Soundcheck.Heex.Template
@@ -229,10 +231,17 @@ defmodule Soundcheck.Analysis.Assigns do
     {taken, other} =
       if kind == :if, do: {branches[:do], branches[:else]}, else: {branches[:else], branches[:do]}
 
-    case connected_condition(condition) do
-      {:connected, true} -> eval(if(ctx.connected?, do: taken, else: other), ctx, state)
-      {:connected, false} -> eval(if(ctx.connected?, do: other, else: taken), ctx, state)
-      :other -> state |> then(&eval(condition, ctx, &1)) |> branch_join([taken, other], ctx)
+    # The run evaluates only the operands it can reach, then the branch its
+    # outcome selects; an outcome the run does not fix joins both branches.
+    state =
+      condition
+      |> Connected.reachable(ctx.connected?)
+      |> Enum.reduce(state, &eval(&1, ctx, &2))
+
+    case Connected.outcome(condition, ctx.connected?) do
+      true -> eval(taken, ctx, state)
+      false -> eval(other, ctx, state)
+      :either -> branch_join(state, [taken, other], ctx)
     end
   end
 
@@ -386,20 +395,6 @@ defmodule Soundcheck.Analysis.Assigns do
   defp socket_var({:=, _, [left, right]}), do: socket_var(left) || socket_var(right)
   defp socket_var({name, _, context}) when is_atom(name) and is_atom(context), do: name
   defp socket_var(_pattern), do: nil
-
-  defp connected_condition({:connected?, _, [_socket]}), do: {:connected, true}
-
-  defp connected_condition({{:., _, [_module, :connected?]}, _, [_socket]}),
-    do: {:connected, true}
-
-  defp connected_condition({negation, _, [condition]}) when negation in [:not, :!] do
-    case connected_condition(condition) do
-      {:connected, polarity} -> {:connected, not polarity}
-      :other -> :other
-    end
-  end
-
-  defp connected_condition(_condition), do: :other
 
   # ── Expanded AST (hook modules) ──
 

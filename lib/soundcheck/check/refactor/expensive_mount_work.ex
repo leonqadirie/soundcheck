@@ -30,7 +30,8 @@ defmodule Soundcheck.Check.Refactor.ExpensiveMountWork do
           end
 
       Calls inside closures (`assign_async/3`, `start_async/3`) and inside
-      `if connected?(socket)` do not count. Modules match
+      `if connected?(socket)` (or a compound such as
+      `if connected?(socket) and enabled?()`) do not count. Modules match
       `expensive_modules` (atoms or regexes on the alias-expanded name).
       Pages that must render the data on the first, disconnected response
       (for search engines) load it in both mounts on purpose; leave this

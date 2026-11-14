@@ -35,7 +35,8 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
           end
 
       The check interprets `mount/3` once per context, following
-      `if connected?(socket)` and its negations. Keys that `handle_params/3`
+      `if connected?(socket)`, its negations, and compounds such as
+      `connected?(socket) and enabled?()`. Keys that `handle_params/3`
       or an `on_mount` hook assigns are never reported, because both run on
       the disconnected render too. When the disconnected path passes the
       socket to a function soundcheck does not model, the check makes no
