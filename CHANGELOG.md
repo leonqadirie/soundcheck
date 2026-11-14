@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/leonqadirie/soundcheck/compare/v0.2.0...v0.2.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* treat compound connected? conditions as guards ([#21](https://github.com/leonqadirie/soundcheck/issues/21)) ([81b2645](https://github.com/leonqadirie/soundcheck/commit/81b2645817e23a02666bae653954bd4683f48570)), closes [#20](https://github.com/leonqadirie/soundcheck/issues/20)
+
 ## [0.2.0](https://github.com/leonqadirie/soundcheck/compare/v0.1.0...v0.2.0) (2026-11-13)
 
 
