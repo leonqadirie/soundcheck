@@ -24,7 +24,7 @@ Supported versions: Elixir 1.18 or later, Phoenix 1.7 and 1.8, LiveView 1.1 and 
 If your project uses [Igniter](https://hexdocs.pm/igniter), run:
 
 ```shell
-mix igniter.install soundcheck@0.2.0
+mix igniter.install soundcheck@0.2.1
 ```
 
 The installer adds Soundcheck as a dependency with `only: [:dev, :test], runtime: false`, registers the plugin in `.credo.exs`, and adds a `lint` alias that compiles before running Credo. If you already have a `lint` alias, the installer leaves it as it is; make sure it runs `compile` before `credo`.
@@ -36,7 +36,7 @@ Add Soundcheck to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:soundcheck, "~> 0.2.0", only: [:dev, :test], runtime: false}
+    {:soundcheck, "~> 0.2.1", only: [:dev, :test], runtime: false}
   ]
 end
 ```
