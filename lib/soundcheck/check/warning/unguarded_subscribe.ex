@@ -33,8 +33,11 @@ defmodule Soundcheck.Check.Warning.UnguardedSubscribe do
       A call counts as a subscription when its alias-expanded name
       (`Phoenix.PubSub.subscribe`, `MyApp.Endpoint.subscribe`) matches
       `subscribe_functions`. Calls inside `if connected?(socket)` (or
-      `unless !connected?(socket)`) are guarded. Subscriptions in helpers
-      that `mount/3` calls are not followed.
+      `unless !connected?(socket)`) are guarded, and so are calls behind a
+      compound condition that is false when disconnected, such as
+      `if connected?(socket) and enabled?()`. `connected?(socket) or ...`
+      guards nothing. Subscriptions in helpers that `mount/3` calls are not
+      followed.
       """,
       params: [
         subscribe_functions:

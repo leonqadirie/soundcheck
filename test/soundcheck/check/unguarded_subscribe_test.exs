@@ -41,6 +41,30 @@ defmodule Soundcheck.Check.Warning.UnguardedSubscribeTest do
     end
   end
 
+  test "near miss: guarded by a compound condition that is false when disconnected" do
+    for body <- [
+          "    if connected?(socket) and enabled?(), do: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    if enabled?() && connected?(socket), do: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    unless not (connected?(socket) and enabled?()), do: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    if !connected?(socket) or enabled?(), do: :ok, else: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    if connected?(socket) and MyApp.Feed.subscribe(\"posts\") == :ok, do: :ok"
+        ] do
+      assert [] = analyze(UnguardedSubscribe, live(body)), "expected no finding for: #{body}"
+    end
+  end
+
+  test "fires when the disconnected mount can still reach the subscription" do
+    for body <- [
+          "    if connected?(socket) or enabled?(), do: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    if connected?(socket) and enabled?(), do: :ok, else: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    if not connected?(socket) and enabled?(), do: PubSub.subscribe(MyApp.PubSub, \"posts\")",
+          "    if MyApp.Feed.subscribe(\"posts\") == :ok and connected?(socket), do: :ok"
+        ] do
+      assert [_diagnostic] = analyze(UnguardedSubscribe, live(body)),
+             "expected a finding for: #{body}"
+    end
+  end
+
   test "honors subscribe_functions" do
     source = live("    MyApp.Feed.listen(\"posts\")")
     assert [] = analyze(UnguardedSubscribe, source)

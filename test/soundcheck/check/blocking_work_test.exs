@@ -54,6 +54,21 @@ defmodule Soundcheck.Check.BlockingWorkTest do
       end
     end
 
+    test "a compound connected? condition skips what only the connected mount runs" do
+      for body <- [
+            "    if connected?(socket) and enabled?(), do: Repo.all(Post)\n    {:ok, socket}",
+            "    if connected?(socket) and Repo.exists?(Post), do: :ok\n    {:ok, socket}"
+          ] do
+        assert [] = analyze(ExpensiveMountWork, mount(body)), "expected no finding for: #{body}"
+      end
+
+      source =
+        mount("    if Repo.exists?(Post) and connected?(socket), do: :ok\n    {:ok, socket}")
+
+      assert [diagnostic] = analyze(ExpensiveMountWork, source)
+      assert text_at(source, diagnostic.primary) == "Repo.exists?"
+    end
+
     test "honors expensive_modules" do
       source = mount("    MyApp.Search.run()\n    {:ok, socket}")
       assert [] = analyze(ExpensiveMountWork, source)

@@ -675,7 +675,7 @@ The interpreter evaluates, per LiveView and for each context `{connected? :: boo
 - `assign(s, :k, v)`, `assign(s, k: v, ...)`, `assign_new(s, :k, f)`, `assign_async(s, :k | [:k], f)` (sets the keys as `AsyncResult`), `stream(s, :k, ...)` (sets `streams.k`), `allow_upload(s, :k, ...)` (sets `uploads.k`), `assign_form`-style helpers through summaries: these add the keys as `:set`.
 - `update(s, :k, f)` requires `k`; a missing `k` is not reported here.
 - Struct or map update on `s.assigns`, or `Map.put` on assigns: `open?: true`.
-- **Branches.** `if connected?(socket)` splits by context. `case`/`cond`/`with`/`if` on other conditions joins branches.
+- **Branches.** `if connected?(socket)` splits by context. A compound condition (`and`, `&&`, `or`, `||`, negation) splits in the context that decides it: `connected?(socket) and flag?` takes the `else` branch when disconnected and joins when connected. `case`/`cond`/`with`/`if` on other conditions joins branches.
 - **Returns.** A `{:ok, socket}` return contributes its socket state to the result. Raising branches contribute nothing.
 - **Local and project function calls** that take and return a socket apply that function's memoized summary. A summary is a map from entry state to exit effects: `must_set`, `may_set`, and `open?`. Summaries are computed bottom-up over the project call graph. Recursion is cut at depth 3, which yields `open?`.
 - **Calls outside the project** (dependencies) that return a socket: `open?: true`.
@@ -752,7 +752,7 @@ Reads under a guard that the context refutes (for example `@live_action == :edit
 
 | Rule | Detection |
 |---|---|
-| `UnguardedSubscribe` | `Phoenix.PubSub.subscribe/2,3` or `<App>.Endpoint.subscribe` in `mount/3`, not dominated by `if connected?(socket)`. Syntactic. A function whose name matches `subscribe_functions` (default `[~r/subscribe/]`) counts as the call. |
+| `UnguardedSubscribe` | `Phoenix.PubSub.subscribe/2,3` or `<App>.Endpoint.subscribe` in `mount/3`, not dominated by `if connected?(socket)` or by a compound condition that is false when disconnected (`connected?(socket) and flag?`). Syntactic. A function whose name matches `subscribe_functions` (default `[~r/subscribe/]`) counts as the call. |
 | `ExpensiveMountWork` | a sink call (`repo_modules`, HTTP clients `Req`/`Finch`/`HTTPoison`/`Tesla`) in `mount/3` reachable in both contexts, with no `assign_async`/`start_async`. Semantic. |
 | `SubscribedWithoutHandleInfo` | a module that subscribes but defines no `handle_info/2` at all. High confidence; a broadcast to it crashes the process. The narrower "no clause matches the broadcast shape" check is reserved for a later phase, because broadcasts are usually built in context modules soundcheck doesn't trace. |
 | `UnhandledInfoMessage` | `send(self(), msg)` or `Process.send_after(self(), msg, t)` with a literal atom or literal-tag tuple, and no `handle_info/2` clause that can match it |

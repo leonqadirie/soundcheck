@@ -5,10 +5,12 @@ defmodule Soundcheck.Analysis.Calls do
   # Closures are skipped: their bodies run later, if at all (a function given
   # to `assign_async/3` or `Task.async/1`). Closures given to `then/2`,
   # `tap/2`, or an `Enum`, `Map`, `Keyword`, or `List` call run inline, so
-  # their calls count. With `guard: :connected`, calls in
-  # a branch of `if connected?(socket)` that runs only when connected are
-  # skipped too.
+  # their calls count. With `guard: :connected`, calls that only the
+  # connected run reaches are skipped too: a branch of `if connected?(socket)`
+  # or of a compound such as `if connected?(socket) and flag?()`, and the
+  # operands after `connected?(socket) and`.
 
+  alias Soundcheck.Analysis.Connected
   alias Soundcheck.Elixir.ModuleIndex
 
   defmodule Call do
@@ -109,11 +111,17 @@ defmodule Soundcheck.Analysis.Calls do
     {taken, other} =
       if kind == :if, do: {branches[:do], branches[:else]}, else: {branches[:else], branches[:do]}
 
-    case connected_polarity(condition) do
-      true -> other |> collect(skipping?, guard?, collect(taken, true, guard?, acc))
-      false -> other |> collect(true, guard?, collect(taken, skipping?, guard?, acc))
-      nil -> Enum.reduce([condition, taken, other], acc, &collect(&1, skipping?, guard?, &2))
-    end
+    # `guard: :connected` keeps what the disconnected run can reach: the
+    # operands it evaluates and the branch its outcome selects.
+    outcome = Connected.outcome(condition, false)
+
+    acc =
+      condition
+      |> Connected.reachable(false)
+      |> Enum.reduce(acc, &collect(&1, skipping?, guard?, &2))
+
+    acc = collect(taken, skipping? or outcome == false, guard?, acc)
+    collect(other, skipping? or outcome == true, guard?, acc)
   end
 
   defp collect({:fn, _, _clauses}, _skipping?, _guard?, acc), do: acc
@@ -150,16 +158,4 @@ defmodule Soundcheck.Analysis.Calls do
       arg -> arg
     end)
   end
-
-  defp connected_polarity({:connected?, _, [_socket]}), do: true
-  defp connected_polarity({{:., _, [_module, :connected?]}, _, [_socket]}), do: true
-
-  defp connected_polarity({negation, _, [condition]}) when negation in [:not, :!] do
-    case connected_polarity(condition) do
-      nil -> nil
-      polarity -> not polarity
-    end
-  end
-
-  defp connected_polarity(_condition), do: nil
 end

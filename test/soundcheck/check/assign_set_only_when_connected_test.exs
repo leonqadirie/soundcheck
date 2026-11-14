@@ -54,6 +54,41 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnectedTest do
       refute Assigns.mount(clauses, false).open?
     end
 
+    test "a compound connected? condition picks the branch only in the run it decides" do
+      clauses =
+        mount("""
+        def mount(_p, _s, socket) do
+          socket =
+            if connected?(socket) and enabled?(),
+              do: assign(socket, :a, 1),
+              else: assign(socket, :b, 2)
+
+          {:ok, socket}
+        end
+        """)
+
+      disconnected = Assigns.mount(clauses, false)
+      assert disconnected.may == MapSet.new([:b])
+      assert disconnected.must == MapSet.new([:b])
+
+      connected = Assigns.mount(clauses, true)
+      assert connected.may == MapSet.new([:a, :b])
+      assert connected.must == MapSet.new()
+    end
+
+    test "the disconnected run skips a helper behind `connected?(socket) and`" do
+      clauses =
+        mount("""
+        def mount(_p, _s, socket) do
+          if connected?(socket) and load(socket), do: :ok
+          {:ok, socket}
+        end
+        """)
+
+      refute Assigns.mount(clauses, false).open?
+      assert Assigns.mount(clauses, true).open?
+    end
+
     test "a helper receiving the socket opens the context" do
       clauses = mount("def mount(_p, _s, socket), do: {:ok, load(socket)}")
       assert Assigns.mount(clauses, false).open?
