@@ -36,19 +36,13 @@ defmodule Soundcheck.Check.NavigationTest do
       assert [_profile] = diagnostics
     end
 
-    test "unverifiable: a patch from a LiveView no live route renders" do
-      # `ContactsPageLive` is routed at `/contacts` and runs
-      # `ContactsPanelLive`'s callbacks, so LiveView accepts the patch.
+    test "near miss: a patch to the route of the LiveView that runs the caller" do
+      # `ContactsPageLive` is routed at `/contacts`, names `ContactsPanelLive`
+      # and runs its callbacks, so LiveView accepts the patch.
       diagnostics = analyze(PatchToForeignLiveView, fixture())
 
-      assert [diagnostic] = Enum.filter(diagnostics, &Diagnostic.unverifiable?/1)
-      assert diagnostic.resolution == {:unverifiable, :unrouted_live_view}
-
-      assert diagnostic.message =~
-               "No live route soundcheck read renders `SoundcheckFixtures.ContactsPanelLive`"
-
-      assert diagnostic.message =~
-               "valid only if SoundcheckFixtures.ContactsPageLive runs this code"
+      refute Enum.any?(diagnostics, &(&1.message =~ "ContactsPanelLive"))
+      assert [] = Enum.filter(diagnostics, &Diagnostic.unverifiable?/1)
     end
   end
 

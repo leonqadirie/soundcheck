@@ -21,7 +21,7 @@ defmodule Soundcheck.Graph do
   alias Soundcheck.Heex.Template
   alias Soundcheck.JS.Extractor
 
-  @links [:live_modules, :routes, :render_index, :js_helpers]
+  @links [:live_modules, :routes, :render_index, :js_helpers, :live_hosts]
 
   # `modules_by_name`, `templates_by_owner`, and `templates_by_module`
   # index `modules` and `templates` for `module/2`, `templates_of/3`, and
@@ -35,7 +35,8 @@ defmodule Soundcheck.Graph do
             live_modules: :not_linked,
             routes: :not_linked,
             render_index: :not_linked,
-            js_helpers: :not_linked
+            js_helpers: :not_linked,
+            live_hosts: :not_linked
 
   @type t :: %__MODULE__{
           modules: [ModuleIndex.Entry.t()],
@@ -47,19 +48,23 @@ defmodule Soundcheck.Graph do
           live_modules: [{ModuleIndex.Entry.t(), :view | :component}] | :not_linked,
           routes: [route()] | :not_linked,
           render_index: render_index() | :not_linked,
-          js_helpers: MapSet.t({atom(), arity()}) | :not_linked
+          js_helpers: MapSet.t({atom(), arity()}) | :not_linked,
+          live_hosts: live_hosts() | :not_linked
         }
 
   # The graph layer sits below the Beam and analysis layers that produce
-  # these two links, so it names their structs without their types.
+  # these links, so it names their structs without their types.
   @typedoc "A live route, a `Soundcheck.Beam.Introspect.Route`."
   @type route :: struct()
 
   @typedoc "A `Soundcheck.Analysis.Components.Index`."
   @type render_index :: struct()
 
+  @typedoc "A `Soundcheck.Analysis.LiveHosts`."
+  @type live_hosts :: struct()
+
   @typedoc "A link between files that `Soundcheck.Graph.Link` adds on demand."
-  @type link :: :live_modules | :routes | :render_index | :js_helpers
+  @type link :: :live_modules | :routes | :render_index | :js_helpers | :live_hosts
 
   @type input :: Input.t()
 
@@ -164,6 +169,13 @@ defmodule Soundcheck.Graph do
   """
   @spec js_helpers(t()) :: MapSet.t({atom(), arity()})
   def js_helpers(%__MODULE__{} = graph), do: linked!(graph, :js_helpers)
+
+  @doc """
+  Returns the routed LiveViews that can run each LiveView's code. Needs
+  `:live_hosts`.
+  """
+  @spec live_hosts(t()) :: live_hosts()
+  def live_hosts(%__MODULE__{} = graph), do: linked!(graph, :live_hosts)
 
   defp linked!(graph, link) do
     case Map.fetch!(graph, link) do

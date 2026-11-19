@@ -762,8 +762,12 @@ Reads under a guard that the context refutes (for example `@live_action == :edit
 
 | Rule | Detection |
 |---|---|
-| `PatchToForeignLiveView` | `push_patch(socket, to: ~p"/x")`, where the verified-route literal (static segments only, dynamic segments as wildcards) matches a live route to a different LiveView than the current module. LiveView raises at runtime for a server-side patch; a client-side `<.link patch>` falls back to navigation instead, so the check skips it. LiveView compares the patch with the root view, so a patch from a LiveView that no live route renders is unverifiable (`:unrouted_live_view`): another LiveView may run its callbacks. Semantic, router required. |
+| `PatchToForeignLiveView` | `push_patch(socket, to: ~p"/x")`, where the verified-route literal (static segments only, dynamic segments as wildcards) matches a live route to a different LiveView than the current module. LiveView raises at runtime for a server-side patch; a client-side `<.link patch>` falls back to navigation instead, so the check skips it. LiveView compares the patch with the root view, so the check compares it with the caller's possible root views: the caller, when a live route renders it, and its hosts (below). When a matching route renders a host, it stays silent for a caller without its own route and reports an unverifiable finding (`:hosted_live_view`) for a caller with one, because that patch is valid under the host and raises when the caller is the root view. A patch from a LiveView that no live route renders is unverifiable (`:unrouted_live_view`), because the hosts found are a lower bound, and so is a patch to a LiveView that loads without debug info (`:unreadable_host`), which may be a host. A caller with its own route and no host on the patch's route gets a resolved finding; a host that does not name it directly stays unseen. Semantic, router required. |
 | `NavigateAcrossLiveSession` | `<.link navigate={~p"/x"}>` or `push_navigate`, where the current module's routes and the destination route sit in different `live_session`s. This works, but degrades to a full page reload. Opt-in. |
+
+**Hosts.** A routed LiveView runs another LiveView's code when it delegates its callbacks (`socket.assigns.page.handle_event(event, params, socket)`) or nests it (`live_render(@socket, Child)`; a nested LiveView forwards its patch to the root process). The `:live_hosts` link (`Soundcheck.Analysis.LiveHosts`) records a routed LiveView as a host of every module its macro-expanded function bodies name, as the receiver of a remote call or as a bare atom. Only direct references count.
+
+The hosts found are a lower bound, because a host that picks the module from a registry or from configuration names nothing, and an over-approximation, because a routed LiveView that only calls a helper on the module counts as its host. A check therefore uses hosts to stay silent or to report an unverifiable finding.
 
 ### 6.7 Forms, accessibility, hooks
 
@@ -950,7 +954,8 @@ Each pair becomes a golden test (section 11). "Fires" must produce exactly one d
 **SC701 PatchToForeignLiveView**
 - Fires: `push_patch(socket, to: ~p"/users/#{id}")` from `PostLive.Index`, where `/users/:id` routes to `UserLive.Show`.
 - Near miss: `push_patch(socket, to: ~p"/posts/#{id}/edit")`, which routes to `PostLive.Index :edit`.
-- Unverifiable: `push_patch(socket, to: ~p"/contacts")` from `ContactsLive`, which no live route renders, where `/contacts` routes to `ContactsPageLive` and that LiveView runs `ContactsLive`'s callbacks.
+- Near miss: `push_patch(socket, to: ~p"/contacts")` from `ContactsLive`, where `/contacts` routes to `ContactsPageLive` and that LiveView names `ContactsLive` and runs its callbacks.
+- Unverifiable: `push_patch(socket, to: ~p"/users")` from `ContactsLive`, which no live route renders, where `/users` routes to `UserLive.Index`.
 
 **SC702 NavigateAcrossLiveSession**
 - Fires: `<.link navigate={~p"/admin"}>` from `:default` to `:admin` session.

@@ -57,6 +57,12 @@ defmodule Soundcheck.Diagnostic do
     * `:unrouted_live_view` - no live route soundcheck read renders the
       LiveView that calls `push_patch`, so the LiveView that runs the call
       is unknown.
+    * `:hosted_live_view` - a routed LiveView that names the caller of
+      `push_patch` renders the patch's route, and the caller has a route
+      of its own, so the patch is valid under one root view and raises
+      under the other.
+    * `:unreadable_host` - the LiveView a patch goes to carries no
+      readable debug info, so it may run the code that calls `push_patch`.
   """
   # `new/4` rejects any other reason: Dialyzer does not check atoms inside
   # tuples against a spec, so the type alone would not catch a misspelling.
@@ -77,7 +83,9 @@ defmodule Soundcheck.Diagnostic do
     :open_handle_params,
     :no_live_socket,
     :open_hook_registry,
-    :unrouted_live_view
+    :unrouted_live_view,
+    :hosted_live_view,
+    :unreadable_host
   ]
 
   @type reason :: unquote(Enum.reduce(Enum.reverse(@reasons), &{:|, [], [&1, &2]}))

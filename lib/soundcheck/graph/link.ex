@@ -11,6 +11,7 @@ defmodule Soundcheck.Graph.Link do
 
   alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Events
+  alias Soundcheck.Analysis.LiveHosts
   alias Soundcheck.Analysis.LiveModules
   alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Graph
@@ -34,4 +35,5 @@ defmodule Soundcheck.Graph.Link do
   def compute(:routes, graph), do: MountHooks.routes(graph)
   def compute(:render_index, graph), do: Components.render_index(graph)
   def compute(:js_helpers, graph), do: Events.js_helpers(graph)
+  def compute(:live_hosts, graph), do: LiveHosts.infer(graph)
 end
