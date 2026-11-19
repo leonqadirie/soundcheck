@@ -115,6 +115,23 @@ defmodule SoundcheckFixtures.HookedChildLive do
     do: {:noreply, push_patch(socket, to: "/hooked-nest?a=1")}
 end
 
+# Patches back to itself without `handle_params/3`, but with a hook on that
+# stage.
+defmodule SoundcheckFixtures.HookedParamsLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket),
+    do: {:ok, attach_hook(socket, :params, :handle_params, &params/3)}
+
+  def render(assigns), do: ~H"<p></p>"
+
+  def handle_event("page", _params, socket),
+    do: {:noreply, push_patch(socket, to: "/hooked?page=2")}
+
+  defp params(_params, _uri, socket), do: {:halt, socket}
+end
+
 # Routed at `/opaque`; compiled without debug info, so the modules it names
 # are unknown.
 defmodule SoundcheckFixtures.OpaqueShellLive do
@@ -155,6 +172,7 @@ defmodule SoundcheckFixtures.HostsRouter do
   live "/other", SoundcheckFixtures.OtherLive, :index
   live "/nest", SoundcheckFixtures.NestingLive, :index
   live "/hooked-nest", SoundcheckFixtures.HookedNestingLive, :index
+  live "/hooked", SoundcheckFixtures.HookedParamsLive, :index
   live "/opaque", SoundcheckFixtures.OpaqueShellLive, :index
   live "/guest", SoundcheckFixtures.OpaqueGuestLive, :index
   # No such module: a route that outlived its LiveView.

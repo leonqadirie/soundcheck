@@ -120,6 +120,14 @@ defmodule Soundcheck.Check.HostInferenceTest do
       assert diagnostic.message =~ "rendered by `SoundcheckFixtures.HookedNestingLive`"
     end
 
+    test "unverifiable: a LiveView patching back to itself attaches a handle_params hook" do
+      assert [diagnostic] =
+               diagnostics_in(PatchWithoutHandleParams, SoundcheckFixtures.HookedParamsLive)
+
+      assert diagnostic.resolution == {:unverifiable, :attach_hook}
+      assert diagnostic.message =~ "returns to `SoundcheckFixtures.HookedParamsLive`"
+    end
+
     test "near miss: hosts and targets that define handle_params/3" do
       for module <- [
             SoundcheckFixtures.HostedTabLive,

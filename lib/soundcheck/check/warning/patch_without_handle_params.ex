@@ -30,16 +30,18 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
       patch whose routes all render another LiveView never reaches this
       LiveView's `handle_params/3`, and a path the check cannot resolve is
       skipped. A `handle_params/3` injected by a `use` macro counts, because
-      the check reads the compiled module.
+      the check reads the compiled module. The finding is unverifiable when
+      the LiveView or one of its `on_mount` hooks attaches a `handle_params`
+      hook with `attach_hook/4`, because a hook that halts takes the
+      callback's place.
 
       A routed LiveView that names the calling LiveView in its code counts
       as its host: it may delegate its callbacks to it or nest it with
       `live_render`, and LiveView then calls the host's `handle_params/3`.
       The check also flags a `push_patch` when a host renders a matching
       route and no LiveView that renders one defines `handle_params/3`.
-      That finding is unverifiable when one of them attaches a
-      `handle_params` hook with `attach_hook/4`, because a hook that halts
-      takes the callback's place.
+      A `handle_params` hook on one of them makes that finding unverifiable
+      too.
       """
     ]
 
@@ -71,7 +73,8 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
         span,
         "This patch returns to `#{inspect(entry.name)}`, which defines no " <>
           "`handle_params/3`; LiveView raises. Define `handle_params/3` or navigate instead.",
-        anchor: anchor
+        anchor: anchor,
+        resolution: hook_resolution([entry.name], routes)
       )
     end
   end
