@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/leonqadirie/soundcheck/compare/v0.2.1...v0.3.0) (2026-11-19)
+
+
+### Features
+
+* infer LiveView hosts for SC701 and SC703 ([#27](https://github.com/leonqadirie/soundcheck/issues/27)) ([b84a4d2](https://github.com/leonqadirie/soundcheck/commit/b84a4d23e8f27f4e544f979fb0d6b7417fd0a342))
+
+
+### Bug Fixes
+
+* mark patches from unrouted LiveViews as unverifiable ([#24](https://github.com/leonqadirie/soundcheck/issues/24)) ([e1f2f56](https://github.com/leonqadirie/soundcheck/commit/e1f2f560c95fce48a684ead24c675ad4fc56746b))
+
 ## [0.2.1](https://github.com/leonqadirie/soundcheck/compare/v0.2.0...v0.2.1) (2026-11-14)
 
 
