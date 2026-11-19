@@ -54,8 +54,9 @@ defmodule Soundcheck.Diagnostic do
       `LiveSocket`.
     * `:open_hook_registry` - the `LiveSocket` registers hooks soundcheck
       cannot follow, such as hooks imported from an npm package.
-    * `:unrouted_live_view` - no live route renders the LiveView that
-      calls `push_patch`, so the LiveView that runs the call is unknown.
+    * `:unrouted_live_view` - no live route soundcheck read renders the
+      LiveView that calls `push_patch`, so the LiveView that runs the call
+      is unknown.
   """
   # `new/4` rejects any other reason: Dialyzer does not check atoms inside
   # tuples against a spec, so the type alone would not catch a misspelling.

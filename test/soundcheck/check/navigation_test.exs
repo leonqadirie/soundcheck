@@ -43,8 +43,12 @@ defmodule Soundcheck.Check.NavigationTest do
 
       assert [diagnostic] = Enum.filter(diagnostics, &Diagnostic.unverifiable?/1)
       assert diagnostic.resolution == {:unverifiable, :unrouted_live_view}
-      assert diagnostic.message =~ "`SoundcheckFixtures.ContactsPanelLive`"
-      assert diagnostic.message =~ "SoundcheckFixtures.ContactsPageLive"
+
+      assert diagnostic.message =~
+               "No live route soundcheck read renders `SoundcheckFixtures.ContactsPanelLive`"
+
+      assert diagnostic.message =~
+               "valid only if SoundcheckFixtures.ContactsPageLive runs this code"
     end
   end
 

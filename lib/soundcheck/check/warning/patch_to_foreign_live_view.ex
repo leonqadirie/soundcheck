@@ -34,9 +34,10 @@ defmodule Soundcheck.Check.Warning.PatchToForeignLiveView do
       LiveView.
 
       LiveView compares the patch with the LiveView the router mounted, not
-      with the module that calls `push_patch`. When no live route renders
-      the calling LiveView, another LiveView may run its callbacks, so the
-      finding is unverifiable and appears only under `strict`.
+      with the module that calls `push_patch`. When no live route that
+      soundcheck read renders the calling LiveView, another LiveView may run
+      its callbacks, so the finding is unverifiable and appears only under
+      `strict`.
       """
     ]
 
@@ -71,8 +72,9 @@ defmodule Soundcheck.Check.Warning.PatchToForeignLiveView do
         Diagnostic.new(
           __MODULE__,
           span,
-          "This patch from `#{inspect(entry.name)}`, which no live route renders, goes to a " <>
-            "route rendered by #{targets}; LiveView raises unless that LiveView runs this code.",
+          "This patch from `#{inspect(entry.name)}` goes to a route rendered by #{targets}. " <>
+            "No live route soundcheck read renders `#{inspect(entry.name)}`, so the patch " <>
+            "is valid only if #{targets} runs this code.",
           anchor: anchor,
           resolution: {:unverifiable, :unrouted_live_view}
         )
