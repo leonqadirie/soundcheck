@@ -1,9 +1,10 @@
 defmodule Soundcheck.Check.HostInferenceTest do
-  # SC701 over LiveViews that run under another LiveView: the
+  # SC701 and SC703 over LiveViews that run under another LiveView: the
   # root view LiveView validates a patch against is not the calling module.
   use Soundcheck.CheckCase
 
   alias Soundcheck.Check.Warning.PatchToForeignLiveView
+  alias Soundcheck.Check.Warning.PatchWithoutHandleParams
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.Span
@@ -96,6 +97,37 @@ defmodule Soundcheck.Check.HostInferenceTest do
 
       assert diagnostic.message =~
                "Soundcheck cannot read SoundcheckFixtures.OpaqueShellLive, which may run this code"
+    end
+  end
+
+  describe "PatchWithoutHandleParams (SC703)" do
+    test "fires on a patch to the route of a host without handle_params/3" do
+      assert [diagnostic] = resolved(analyze(PatchWithoutHandleParams, fixture()))
+
+      assert diagnostic.message =~ "This patch from `SoundcheckFixtures.NestedChildLive`"
+
+      assert diagnostic.message =~
+               "rendered by `SoundcheckFixtures.NestingLive`, which names it and defines no " <>
+                 "`handle_params/3`"
+    end
+
+    test "unverifiable: the host attaches a handle_params hook" do
+      # A hook that halts keeps LiveView from calling `handle_params/3`.
+      assert [diagnostic] =
+               diagnostics_in(PatchWithoutHandleParams, SoundcheckFixtures.HookedChildLive)
+
+      assert diagnostic.resolution == {:unverifiable, :attach_hook}
+      assert diagnostic.message =~ "rendered by `SoundcheckFixtures.HookedNestingLive`"
+    end
+
+    test "near miss: hosts and targets that define handle_params/3" do
+      for module <- [
+            SoundcheckFixtures.HostedTabLive,
+            SoundcheckFixtures.OrphanPanelLive,
+            SoundcheckFixtures.OpaqueGuestLive
+          ] do
+        assert [] = diagnostics_in(PatchWithoutHandleParams, module)
+      end
     end
   end
 end

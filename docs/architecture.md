@@ -767,7 +767,7 @@ Reads under a guard that the context refutes (for example `@live_action == :edit
 
 **Hosts.** A routed LiveView runs another LiveView's code when it delegates its callbacks (`socket.assigns.page.handle_event(event, params, socket)`) or nests it (`live_render(@socket, Child)`; a nested LiveView forwards its patch to the root process). The `:live_hosts` link (`Soundcheck.Analysis.LiveHosts`) records a routed LiveView as a host of every module its macro-expanded function bodies name, as the receiver of a remote call or as a bare atom. Only direct references count.
 
-The hosts found are a lower bound, because a host that picks the module from a registry or from configuration names nothing, and an over-approximation, because a routed LiveView that only calls a helper on the module counts as its host. A check therefore uses hosts to stay silent or to report an unverifiable finding.
+The hosts found are a lower bound, because a host that picks the module from a registry or from configuration names nothing, and an over-approximation, because a routed LiveView that only calls a helper on the module counts as its host. A check therefore uses hosts to stay silent or to report an unverifiable finding. It reports a resolved finding from them only when the finding holds whichever LiveView is the root: `PatchWithoutHandleParams` flags a server-side patch when a host renders a matching route and no LiveView that renders one defines `handle_params/3`.
 
 ### 6.7 Forms, accessibility, hooks
 

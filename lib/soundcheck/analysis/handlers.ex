@@ -246,11 +246,17 @@ defmodule Soundcheck.Analysis.Handlers do
   defp matches?(_pattern, _message), do: false
 
   # ── attach_hook ──
-  #
-  # `attach_hook(socket, name, stage, fun)` in the module or in any of its
-  # `on_mount` hook modules adds handlers soundcheck does not read.
 
-  defp attach_hook_reasons(module, stage, routes) do
+  @doc """
+  Why `stage` of `module` may run code soundcheck does not read:
+  `attach_hook(socket, name, stage, fun)` in the module or in any of its
+  `on_mount` hook modules adds a handler, and a hook that halts keeps
+  LiveView from calling the module's own callback. Returns `[]` when no
+  hook attaches to `stage`, which can be any lifecycle stage.
+  """
+  @spec attach_hook_reasons(module(), atom(), [Introspect.route()]) ::
+          [Soundcheck.Diagnostic.reason()]
+  def attach_hook_reasons(module, stage, routes) do
     [module | MountHooks.hook_modules(module, routes)]
     |> Enum.uniq()
     |> Enum.flat_map(&attaches?(&1, stage))
