@@ -26,6 +26,33 @@ defmodule SoundcheckFixtures.FilterLive do
   def handle_params(params, _uri, socket), do: {:noreply, assign(socket, :sort, params["sort"])}
 end
 
+# Routed at `/contacts`; runs `ContactsPanelLive`'s callbacks.
+defmodule SoundcheckFixtures.ContactsPageLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  def mount(_params, _session, socket),
+    do: {:ok, assign(socket, :page, SoundcheckFixtures.ContactsPanelLive)}
+
+  def render(assigns), do: assigns.page.render(assigns)
+
+  def handle_event(event, params, socket),
+    do: socket.assigns.page.handle_event(event, params, socket)
+
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+end
+
+# No route renders it, so its patch runs under whichever LiveView calls it.
+defmodule SoundcheckFixtures.ContactsPanelLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  def render(assigns), do: ~H"<p></p>"
+
+  def handle_event("search", _params, socket),
+    do: {:noreply, push_patch(socket, to: "/contacts?q=ada")}
+end
+
 defmodule SoundcheckFixtures.SubscriberLive do
   @moduledoc false
   use Phoenix.LiveView
@@ -48,6 +75,7 @@ defmodule SoundcheckFixtures.NavigationRouter do
   live "/posts/:id/edit", SoundcheckFixtures.PatchingLive, :edit
   live "/users/:id", SoundcheckFixtures.CounterLive, :show
   live "/filters", SoundcheckFixtures.FilterLive, :index
+  live "/contacts", SoundcheckFixtures.ContactsPageLive, :index
 end
 
 defmodule SoundcheckFixtures.UserAuth do

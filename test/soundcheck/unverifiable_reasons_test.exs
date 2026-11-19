@@ -49,7 +49,9 @@ defmodule Soundcheck.UnverifiableReasonsTest do
     # messages_test.exs
     :attach_hook,
     # undefined_hook_test.exs, unhandled_server_push_event_test.exs
-    :no_live_socket
+    :no_live_socket,
+    # navigation_test.exs
+    :unrouted_live_view
   ]
 
   @covered_here [

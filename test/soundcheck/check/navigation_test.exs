@@ -9,14 +9,17 @@ defmodule Soundcheck.Check.NavigationTest do
   alias Soundcheck.Check.Warning.PatchToForeignLiveView
   alias Soundcheck.Check.Warning.PatchWithoutHandleParams
   alias Soundcheck.Check.Warning.SubscribedWithoutHandleInfo
+  alias Soundcheck.Diagnostic
 
   @fixture "test/support/fixtures/navigation.ex"
 
   defp fixture, do: [{@fixture, File.read!(@fixture)}]
 
+  defp resolved(diagnostics), do: Enum.reject(diagnostics, &Diagnostic.unverifiable?/1)
+
   describe "PatchToForeignLiveView (SC701)" do
     test "fires on server-side patches to routes another LiveView renders" do
-      diagnostics = analyze(PatchToForeignLiveView, fixture())
+      diagnostics = resolved(analyze(PatchToForeignLiveView, fixture()))
       texts = Enum.map(diagnostics, &text_at(File.read!(@fixture), &1.primary))
 
       assert texts == ["push_patch"]
@@ -24,13 +27,24 @@ defmodule Soundcheck.Check.NavigationTest do
     end
 
     test "near miss: patches within the same LiveView, and client-side patch links" do
-      diagnostics = analyze(PatchToForeignLiveView, fixture())
+      diagnostics = resolved(analyze(PatchToForeignLiveView, fixture()))
       texts = Enum.map(diagnostics, &text_at(File.read!(@fixture), &1.primary))
 
       # `<.link patch="/users/2">` falls back to navigation instead of raising.
       refute "/users/2" in texts
       refute Enum.any?(diagnostics, &(&1.primary.start == {15, 31}))
       assert [_profile] = diagnostics
+    end
+
+    test "unverifiable: a patch from a LiveView no live route renders" do
+      # `ContactsPageLive` is routed at `/contacts` and runs
+      # `ContactsPanelLive`'s callbacks, so LiveView accepts the patch.
+      diagnostics = analyze(PatchToForeignLiveView, fixture())
+
+      assert [diagnostic] = Enum.filter(diagnostics, &Diagnostic.unverifiable?/1)
+      assert diagnostic.resolution == {:unverifiable, :unrouted_live_view}
+      assert diagnostic.message =~ "`SoundcheckFixtures.ContactsPanelLive`"
+      assert diagnostic.message =~ "SoundcheckFixtures.ContactsPageLive"
     end
   end
 
@@ -132,6 +146,7 @@ defmodule Soundcheck.Check.NavigationTest do
                "/posts",
                "/posts/:id/edit",
                "/filters",
+               "/contacts",
                "/",
                "/about",
                "/preview",
@@ -160,7 +175,7 @@ defmodule Soundcheck.Check.NavigationTest do
     test "near miss: session hooks, module hooks, and public_paths" do
       diagnostics =
         analyze(LiveRouteWithoutAuthHook, fixture(),
-          public_paths: [~r/^\/(posts|users|filters|preview|members)/, "/"]
+          public_paths: [~r/^\/(posts|users|filters|contacts|preview|members)/, "/"]
         )
 
       assert [diagnostic] = diagnostics

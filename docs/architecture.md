@@ -762,7 +762,7 @@ Reads under a guard that the context refutes (for example `@live_action == :edit
 
 | Rule | Detection |
 |---|---|
-| `PatchToForeignLiveView` | `push_patch(socket, to: ~p"/x")`, where the verified-route literal (static segments only, dynamic segments as wildcards) matches a live route to a different LiveView than the current module. LiveView raises at runtime for a server-side patch; a client-side `<.link patch>` falls back to navigation instead, so the check skips it. Semantic, router required. |
+| `PatchToForeignLiveView` | `push_patch(socket, to: ~p"/x")`, where the verified-route literal (static segments only, dynamic segments as wildcards) matches a live route to a different LiveView than the current module. LiveView raises at runtime for a server-side patch; a client-side `<.link patch>` falls back to navigation instead, so the check skips it. LiveView compares the patch with the root view, so a patch from a LiveView that no live route renders is unverifiable (`:unrouted_live_view`): another LiveView may run its callbacks. Semantic, router required. |
 | `NavigateAcrossLiveSession` | `<.link navigate={~p"/x"}>` or `push_navigate`, where the current module's routes and the destination route sit in different `live_session`s. This works, but degrades to a full page reload. Opt-in. |
 
 ### 6.7 Forms, accessibility, hooks
@@ -950,6 +950,7 @@ Each pair becomes a golden test (section 11). "Fires" must produce exactly one d
 **SC701 PatchToForeignLiveView**
 - Fires: `push_patch(socket, to: ~p"/users/#{id}")` from `PostLive.Index`, where `/users/:id` routes to `UserLive.Show`.
 - Near miss: `push_patch(socket, to: ~p"/posts/#{id}/edit")`, which routes to `PostLive.Index :edit`.
+- Unverifiable: `push_patch(socket, to: ~p"/contacts")` from `ContactsLive`, which no live route renders, where `/contacts` routes to `ContactsPageLive` and that LiveView runs `ContactsLive`'s callbacks.
 
 **SC702 NavigateAcrossLiveSession**
 - Fires: `<.link navigate={~p"/admin"}>` from `:default` to `:admin` session.
