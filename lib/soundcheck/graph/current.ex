@@ -37,7 +37,7 @@ defmodule Soundcheck.Graph.Current do
   Makes `inputs` this run's graph unless one exists already. `opts` go to
   `Soundcheck.Graph.build/2`.
   """
-  @spec prepare(Enumerable.t(), keyword()) :: Graph.t()
+  @spec prepare(Enumerable.t(Input.t()), keyword()) :: Graph.t()
   def prepare(inputs, opts),
     do: Once.run_shared({__MODULE__, :graph}, fn -> Graph.build(inputs, opts) end)
 

@@ -51,11 +51,14 @@ defmodule Soundcheck.Credo.BuildGraphTask do
   end
 
   @doc """
-  Streams graph inputs from successfully parsed files outside `excluded_paths`.
-  This lets graph workers consume ASTs without first copying the entire
-  source set out of Credo's cache.
+  Streams the graph inputs among Credo's `source_files`: those that parsed
+  and lie outside `excluded_paths` (see `Soundcheck.PathFilter.excluded?/2`).
+  The stream reads a file's source and AST from Credo's cache when the
+  graph build reaches that file, so the run never holds every file's copy
+  at once.
   """
-  @spec inputs([SourceFile.t()], [Regex.t() | String.t()]) :: Enumerable.t()
+  @spec inputs(Enumerable.t(SourceFile.t()), [Regex.t() | String.t()]) ::
+          Enumerable.t(Input.t())
   def inputs(source_files, excluded_paths) do
     source_files
     |> Stream.filter(fn
