@@ -44,17 +44,18 @@ defmodule Soundcheck.Check.Warning.UnhandledInfoMessage do
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.LiveModules
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Graph
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
     render_index = Graph.render_index(graph)
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
 
     for {entry, kind} <- Graph.live_modules(graph),
         {:ok, [_ | _] = sends} <- [Handlers.self_sends(entry.name)],
         receiver <- receivers(entry.name, kind, render_index),
-        {:ok, handlers} <- [Handlers.handler_set(receiver, :handle_info, routes)],
+        {:ok, handlers} <- [Handlers.handler_set(receiver, :handle_info, route_hooks)],
         sent <- sends,
         not Handlers.handles?(handlers, sent.message) do
       LiveModules.unhandled(

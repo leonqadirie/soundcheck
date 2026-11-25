@@ -3,11 +3,26 @@ defmodule Soundcheck.Analysis.MountHooks do
   # The `on_mount` hooks that run before a LiveView's first render: hooks
   # the module declares and hooks from the `live_session` of every route that
   # points to it.
+  #
+  # Checks ask for the hooks of one LiveView at a time, so `route_hooks/1`
+  # groups the route hooks by LiveView once and every lookup reads that.
 
   alias Soundcheck.Analysis.Assigns
   alias Soundcheck.Beam.DebugInfo
   alias Soundcheck.Beam.Introspect
   alias Soundcheck.Graph
+
+  defmodule RouteHooks do
+    @moduledoc false
+    # The `on_mount` hooks each LiveView gets from the `live_session` of
+    # its routes, in route order.
+    @enforce_keys [:by_view]
+    defstruct [:by_view]
+
+    @type t :: %__MODULE__{by_view: %{module() => [{module(), term()}]}}
+  end
+
+  @type route_hooks :: RouteHooks.t()
 
   @doc "The live routes of every router in the graph."
   @spec routes(Graph.t()) :: [Introspect.route()]
@@ -116,21 +131,30 @@ defmodule Soundcheck.Analysis.MountHooks do
     end
   end
 
+  @doc "Groups the `live_session` hooks of `routes` by the LiveView they point to."
+  @spec route_hooks([Introspect.route()]) :: route_hooks()
+  def route_hooks(routes) do
+    by_view =
+      routes
+      |> Enum.group_by(& &1.live_view, & &1.on_mount)
+      |> Map.new(fn {view, hooks} -> {view, Enum.concat(hooks)} end)
+
+    %RouteHooks{by_view: by_view}
+  end
+
   @doc """
   The hook modules that run on `module`'s mount: those `module` declares
   and those of every `live_session` whose routes point to it.
   """
-  @spec hook_modules(module(), [Introspect.route()]) :: [module()]
-  def hook_modules(module, routes) do
+  @spec hook_modules(module(), route_hooks()) :: [module()]
+  def hook_modules(module, %RouteHooks{by_view: by_view}) do
     module_hooks =
       case Introspect.live(module) do
         {:ok, %{on_mount: hooks}} -> hooks
         {:error, _reason} -> []
       end
 
-    route_hooks = for %{live_view: ^module, on_mount: hooks} <- routes, hook <- hooks, do: hook
-
-    (module_hooks ++ route_hooks)
+    (module_hooks ++ Map.get(by_view, module, []))
     |> Enum.map(fn {hook, _arg} -> hook end)
     |> Enum.uniq()
   end
@@ -139,10 +163,10 @@ defmodule Soundcheck.Analysis.MountHooks do
   The keys `module`'s hooks may assign, and whether every hook could be
   read.
   """
-  @spec keys(module(), [Introspect.route()]) :: {MapSet.t(atom()), boolean()}
-  def keys(module, routes) do
+  @spec keys(module(), route_hooks()) :: {MapSet.t(atom()), boolean()}
+  def keys(module, %RouteHooks{} = route_hooks) do
     module
-    |> hook_modules(routes)
+    |> hook_modules(route_hooks)
     |> Enum.reduce({MapSet.new(), true}, fn hook, {keys, known?} ->
       case Assigns.on_mount_keys(hook) do
         {:ok, hook_keys} -> {MapSet.union(keys, hook_keys), known?}

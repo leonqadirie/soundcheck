@@ -45,6 +45,7 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Events.Emitter
   alias Soundcheck.Analysis.Hooks
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.JS.Extractor.Push
@@ -52,7 +53,11 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
     registry = Hooks.registry(graph)
-    index = %{render: Graph.render_index(graph), routes: Graph.routes(graph)}
+
+    index = %{
+      render: Graph.render_index(graph),
+      route_hooks: MountHooks.route_hooks(Graph.routes(graph))
+    }
 
     diagnostics =
       for %{name: name} = usage <- Hooks.usages(graph),
@@ -75,7 +80,7 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
     }
 
     with {:ok, receivers} <- Events.receivers(usage.template, emitter, index.render),
-         {:missing, missing} <- Events.check_handled(receivers, event, index.routes) do
+         {:missing, missing} <- Events.check_handled(receivers, event, index.route_hooks) do
       [diagnostic(graph, usage, emitter, event, missing, :resolved)]
     else
       :handled ->

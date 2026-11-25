@@ -2,12 +2,15 @@ defmodule Soundcheck.Analysis.HandlersTest do
   use Soundcheck.CheckCase
 
   alias Soundcheck.Analysis.Handlers
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Beam.Introspect
   alias SoundcheckFixtures.AsyncLive
 
+  defp hooks(routes \\ []), do: MountHooks.route_hooks(routes)
+
   describe "handler_set/3" do
     test "reads literal, prefix, and guard-restricted event patterns" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.CounterLive, :handle_event, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.CounterLive, :handle_event, hooks())
 
       assert set.patterns == [
                {:literal, "inc"},
@@ -22,37 +25,39 @@ defmodule Soundcheck.Analysis.HandlersTest do
     end
 
     test "reads atom and tagged tuple patterns" do
-      {:ok, set} = Handlers.handler_set(AsyncLive, :handle_async, [])
+      {:ok, set} = Handlers.handler_set(AsyncLive, :handle_async, hooks())
       assert set.patterns == [{:atom, :load_users}, {:tagged, :fetch, 2}]
       assert Handlers.handles?(set, {:tagged, :fetch, 2})
       refute Handlers.handles?(set, {:atom, :load_stats})
     end
 
     test "reads the literal a `=` in an event head binds" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_event, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_event, hooks())
 
       assert [{:literal, "save"}, _binary] = set.patterns
     end
 
     test "an event head that is neither a literal, a prefix, nor a variable accepts everything" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_event, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_event, hooks())
 
       assert [_save, :any] = set.patterns
       assert Handlers.handles?(set, {:literal, "anything"})
     end
 
     test "a guard that is not a chain of literal comparisons leaves the clause open" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.GuardedEventsLive, :handle_event, [])
+      {:ok, set} =
+        Handlers.handler_set(SoundcheckFixtures.GuardedEventsLive, :handle_event, hooks())
+
       assert set.patterns == [:any]
     end
 
     test "several `when` guards leave the clause open" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.TwoGuardsLive, :handle_event, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.TwoGuardsLive, :handle_event, hooks())
       assert set.patterns == [:any]
     end
 
     test "reads tuple, tagged tuple, `=`, and map message patterns" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_info, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_info, hooks())
 
       assert set.patterns == [
                {:tagged, :loaded, 3},
@@ -64,7 +69,7 @@ defmodule Soundcheck.Analysis.HandlersTest do
     end
 
     test "an untagged tuple pattern accepts every tagged message of its size" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_info, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.PatternsLive, :handle_info, hooks())
 
       assert Handlers.handles?(set, {:tagged, :anything, 2})
       assert Handlers.handles?(set, {:tagged, :DOWN, 4})
@@ -74,16 +79,18 @@ defmodule Soundcheck.Analysis.HandlersTest do
     end
 
     test "a catch-all clause accepts everything" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.CatchAllLive, :handle_info, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.CatchAllLive, :handle_info, hooks())
       assert Handlers.handles?(set, {:atom, :whatever})
     end
 
     test "attach_hook for the stage opens the set" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.AttachedLive, :handle_info, [])
+      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.AttachedLive, :handle_info, hooks())
       refute set.closed?
       assert set.open_reasons == [:attach_hook]
 
-      {:ok, events} = Handlers.handler_set(SoundcheckFixtures.AttachedLive, :handle_event, [])
+      {:ok, events} =
+        Handlers.handler_set(SoundcheckFixtures.AttachedLive, :handle_event, hooks())
+
       assert events.closed?
     end
 
@@ -91,13 +98,15 @@ defmodule Soundcheck.Analysis.HandlersTest do
       {:ok, routes} = Introspect.live_routes(SoundcheckFixtures.SessionHookRouter)
 
       {:ok, set} =
-        Handlers.handler_set(SoundcheckFixtures.SessionHookedLive, :handle_event, routes)
+        Handlers.handler_set(SoundcheckFixtures.SessionHookedLive, :handle_event, hooks(routes))
 
       assert set.open_reasons == [:attach_hook]
     end
 
     test "without the route, the live_session hook does not apply" do
-      {:ok, set} = Handlers.handler_set(SoundcheckFixtures.SessionHookedLive, :handle_event, [])
+      {:ok, set} =
+        Handlers.handler_set(SoundcheckFixtures.SessionHookedLive, :handle_event, hooks())
+
       assert set.closed?
     end
 
@@ -106,7 +115,7 @@ defmodule Soundcheck.Analysis.HandlersTest do
 
       for {given, closed?} <- [{[], true}, {routes, false}, {[], true}] do
         {:ok, set} =
-          Handlers.handler_set(SoundcheckFixtures.SessionHookedLive, :handle_event, given)
+          Handlers.handler_set(SoundcheckFixtures.SessionHookedLive, :handle_event, hooks(given))
 
         assert set.closed? == closed?
       end
@@ -114,12 +123,12 @@ defmodule Soundcheck.Analysis.HandlersTest do
 
     test "a module without the callback has a closed, empty set" do
       assert {:ok, %{patterns: [], closed?: true}} =
-               Handlers.handler_set(SoundcheckFixtures.AttachedLive, :handle_async, [])
+               Handlers.handler_set(SoundcheckFixtures.AttachedLive, :handle_async, hooks())
     end
 
     test "reports unreadable modules" do
       assert {:error, :no_debug_info} =
-               Handlers.handler_set(SoundcheckFixtures.NoDebugInfoLive, :handle_info, [])
+               Handlers.handler_set(SoundcheckFixtures.NoDebugInfoLive, :handle_info, hooks())
     end
   end
 

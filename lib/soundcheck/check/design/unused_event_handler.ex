@@ -40,6 +40,7 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.Hooks
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.NameFilter
@@ -112,10 +113,10 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
 
   defp unused(graph, reached, ignore) do
     literals = MapSet.union(string_literals(graph), js_push_names(graph))
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
 
     for {entry, _kind} <- Graph.live_modules(graph),
-        {:ok, set} <- [Handlers.handler_set(entry.name, :handle_event, routes)],
+        {:ok, set} <- [Handlers.handler_set(entry.name, :handle_event, route_hooks)],
         set.closed?,
         {:literal, event} <- set.patterns,
         not MapSet.member?(reached, {entry.name, event}),

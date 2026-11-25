@@ -28,6 +28,7 @@ defmodule Soundcheck.Analysis.Events do
   alias Soundcheck.Analysis.Components
   alias Soundcheck.Analysis.Guards
   alias Soundcheck.Analysis.Handlers
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Beam.Introspect
   alias Soundcheck.Diagnostic
   alias Soundcheck.Heex.KeywordAttrs
@@ -463,14 +464,14 @@ defmodule Soundcheck.Analysis.Events do
   Checks `event` against each receiver's `handle_event/3` clauses. Returns
   `:handled`, `{:missing, [{module, handler_set}]}` when every receiver
   that lacks the event has a closed handler set, or `{:unverifiable,
-  reason}` otherwise. `routes` are the project's live routes, passed to
-  `Handlers.handler_set/3`.
+  reason}` otherwise. `route_hooks` go to `Handlers.handler_set/3`.
   """
-  @spec check_handled([module()], String.t(), [Introspect.route()]) ::
+  @spec check_handled([module()], String.t(), MountHooks.route_hooks()) ::
           :handled | {:missing, [{module(), Handlers.handler_set()}]} | Diagnostic.unverifiable()
-  def check_handled(receivers, event, routes) do
+  def check_handled(receivers, event, route_hooks) do
     results =
-      for module <- receivers, do: {module, Handlers.handler_set(module, :handle_event, routes)}
+      for module <- receivers,
+          do: {module, Handlers.handler_set(module, :handle_event, route_hooks)}
 
     missing =
       for {module, {:ok, set}} <- results,

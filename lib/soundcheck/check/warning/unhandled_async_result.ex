@@ -42,15 +42,16 @@ defmodule Soundcheck.Check.Warning.UnhandledAsyncResult do
 
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.LiveModules
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Graph
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
 
     for {entry, _kind} <- Graph.live_modules(graph),
         {:ok, starts} <- [Handlers.async_starts(entry.name)],
-        {:ok, handlers} <- [Handlers.handler_set(entry.name, :handle_async, routes)],
+        {:ok, handlers} <- [Handlers.handler_set(entry.name, :handle_async, route_hooks)],
         start <- starts,
         not Handlers.handles?(handlers, start.message) do
       LiveModules.unhandled(

@@ -21,6 +21,28 @@ defmodule Soundcheck.Analysis.MountHooksTest do
     assert MountHooks.can_halt?(SoundcheckFixtures.Missing, :any)
   end
 
+  describe "hook_modules/2" do
+    defp route(view, hooks), do: %{live_view: view, on_mount: Enum.map(hooks, &{&1, :default})}
+
+    test "collects the hooks of every route that points to the LiveView, in route order" do
+      route_hooks =
+        MountHooks.route_hooks([
+          route(DemoLive, [HookA]),
+          route(OtherLive, [HookB]),
+          route(DemoLive, [HookC, HookA])
+        ])
+
+      assert MountHooks.hook_modules(DemoLive, route_hooks) == [HookA, HookC]
+      assert MountHooks.hook_modules(OtherLive, route_hooks) == [HookB]
+    end
+
+    test "a LiveView no route points to has no route hooks" do
+      route_hooks = MountHooks.route_hooks([route(DemoLive, [HookA])])
+
+      assert MountHooks.hook_modules(UnroutedLive, route_hooks) == []
+    end
+  end
+
   test "hook keys include those its captured and called helpers assign" do
     assert {:ok, keys} = Assigns.on_mount_keys(SoundcheckFixtures.CurrentUriHook)
     assert MapSet.to_list(keys) == [:current_path]

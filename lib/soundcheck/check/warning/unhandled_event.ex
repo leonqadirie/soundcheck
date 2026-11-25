@@ -64,6 +64,7 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
 
   alias Soundcheck.Analysis.Anchors
   alias Soundcheck.Analysis.Events
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Analysis.Suggest
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
@@ -73,7 +74,7 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
   def analyze(%Graph{} = graph, params) do
     render_index = Graph.render_index(graph)
     js_helpers = Graph.js_helpers(graph)
-    index = %{render: render_index, routes: Graph.routes(graph)}
+    index = %{render: render_index, route_hooks: MountHooks.route_hooks(Graph.routes(graph))}
 
     for template <- graph.templates,
         emitter <- Events.emitters(template, js_helpers),
@@ -97,15 +98,15 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
 
   defp check(graph, template, emitter, index) do
     case Events.receiver_reach(template, emitter, index.render) do
-      {:ok, reach} -> resolved(graph, template, emitter, reach, index.routes)
+      {:ok, reach} -> resolved(graph, template, emitter, reach, index.route_hooks)
       {:unverifiable, reason} -> [unverifiable(graph, template, emitter, reason)]
     end
   end
 
-  defp resolved(graph, template, %{event: {:literal, event}} = emitter, reach, routes) do
+  defp resolved(graph, template, %{event: {:literal, event}} = emitter, reach, route_hooks) do
     receivers = reach |> Map.keys() |> Enum.sort()
 
-    case Events.check_handled(receivers, event, routes) do
+    case Events.check_handled(receivers, event, route_hooks) do
       :handled ->
         []
 

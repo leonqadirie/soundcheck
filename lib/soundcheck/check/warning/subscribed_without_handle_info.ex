@@ -39,6 +39,7 @@ defmodule Soundcheck.Check.Warning.SubscribedWithoutHandleInfo do
     ]
 
   alias Soundcheck.Analysis.Handlers
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Diagnostic
   alias Soundcheck.Elixir.ModuleIndex
   alias Soundcheck.Graph
@@ -47,11 +48,11 @@ defmodule Soundcheck.Check.Warning.SubscribedWithoutHandleInfo do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
 
     for {entry, :view} <- Graph.live_modules(graph),
         {:ok, %{patterns: [], closed?: true}} <-
-          [Handlers.handler_set(entry.name, :handle_info, routes)],
+          [Handlers.handler_set(entry.name, :handle_info, route_hooks)],
         clause <- Map.get(entry.functions, {:mount, 3}, []),
         {name, meta, written} <- remote_calls(clause.body, entry),
         NameFilter.matches_any?(name, Keyword.fetch!(params, :subscribe_functions)) do

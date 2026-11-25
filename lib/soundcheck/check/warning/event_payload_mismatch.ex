@@ -46,6 +46,7 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
   alias Soundcheck.Analysis.Anchors
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Beam.DebugInfo
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
@@ -62,7 +63,7 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
     render_index = Graph.render_index(graph)
     js_helpers = Graph.js_helpers(graph)
     metadata = MapSet.new(Keyword.fetch!(params, :metadata_keys), &to_string/1)
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
 
     for template <- graph.templates,
         %Node.Element{} = element <- Walker.elements(template.root),
@@ -72,7 +73,7 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
         {:ok, sent} <- [payload(element, emitter, metadata)],
         {:ok, receivers} <- [Events.receivers(template, emitter, render_index)],
         receiver <- receivers,
-        {:ok, missing} <- [missing(receiver, event, sent, routes)] do
+        {:ok, missing} <- [missing(receiver, event, sent, route_hooks)] do
       Diagnostic.new(__MODULE__, emitter.span, message(emitter, event, receiver, missing, sent),
         anchor: Anchors.for_template(graph, template, emitter.span)
       )
@@ -111,8 +112,8 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
 
   # `{:ok, missing}` with the keys the closest clause lacks, when `module`
   # names `event` in some clause and no clause for it accepts `sent`.
-  defp missing(module, event, sent, routes) do
-    with {:ok, %{closed?: true}} <- Handlers.handler_set(module, :handle_event, routes),
+  defp missing(module, event, sent, route_hooks) do
+    with {:ok, %{closed?: true}} <- Handlers.handler_set(module, :handle_event, route_hooks),
          {:ok, clauses} <- DebugInfo.clauses(module, :handle_event, 3),
          [_ | _] = required <- required_keys(clauses, event),
          false <- Enum.any?(required, fn keys -> Enum.all?(keys, &sends?(sent, &1)) end) do
