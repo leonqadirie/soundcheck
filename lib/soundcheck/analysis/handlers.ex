@@ -113,6 +113,32 @@ defmodule Soundcheck.Analysis.Handlers do
     end)
   end
 
+  @typedoc """
+  The head of a `handle_event/3` clause: the literal event with the string
+  keys its params pattern requires, or `:any` for a clause whose event is
+  not a literal.
+  """
+  @type event_head :: {event :: String.t(), keys :: [String.t()]} | :any
+
+  @doc """
+  Returns the head of each `handle_event/3` clause of `module`, in clause
+  order. Memoized per module: reading the clauses copies the module's
+  whole definition out of the cache, and the heads hold no clause body.
+  """
+  @spec event_heads(module()) :: {:ok, [event_head()]} | {:error, DebugInfo.error()}
+  def event_heads(module) do
+    Once.run({__MODULE__, :event_heads, module}, fn ->
+      with {:ok, clauses} <- DebugInfo.clauses(module, :handle_event, 3),
+           do: {:ok, Enum.map(clauses, &event_head/1)}
+    end)
+  end
+
+  defp event_head({_meta, [event, params, _socket], _guards, _body}) when is_binary(event) do
+    {event, for({key, _value} <- map_pattern_pairs(params), is_binary(key), do: key)}
+  end
+
+  defp event_head({_meta, _args, _guards, _body}), do: :any
+
   @doc """
   The `{key, value}` pairs a map pattern requires, including both sides of
   a `=` binding. Any other pattern requires none.

@@ -47,7 +47,6 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.MountHooks
-  alias Soundcheck.Beam.DebugInfo
   alias Soundcheck.Diagnostic
   alias Soundcheck.Graph
   alias Soundcheck.Heex.Node
@@ -114,8 +113,8 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
   # names `event` in some clause and no clause for it accepts `sent`.
   defp missing(module, event, sent, route_hooks) do
     with {:ok, %{closed?: true}} <- Handlers.handler_set(module, :handle_event, route_hooks),
-         {:ok, clauses} <- DebugInfo.clauses(module, :handle_event, 3),
-         [_ | _] = required <- required_keys(clauses, event),
+         {:ok, heads} <- Handlers.event_heads(module),
+         [_ | _] = required <- required_keys(heads, event),
          false <- Enum.any?(required, fn keys -> Enum.all?(keys, &sends?(sent, &1)) end) do
       {:ok, required |> Enum.map(&Enum.reject(&1, fn key -> sends?(sent, key) end)) |> closest()}
     else
@@ -126,16 +125,12 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
   # The keys each clause that can receive `event` requires; a clause whose
   # event pattern is not a literal can receive any event and requires
   # nothing as far as the check can tell.
-  defp required_keys(clauses, event) do
-    Enum.flat_map(clauses, fn
-      {_meta, [^event, params, _socket], _guards, _body} -> [params_keys(params)]
-      {_meta, [other, _params, _socket], _guards, _body} when is_binary(other) -> []
-      {_meta, _args, _guards, _body} -> [[]]
+  defp required_keys(heads, event) do
+    Enum.flat_map(heads, fn
+      {^event, keys} -> [keys]
+      {_other_event, _keys} -> []
+      :any -> [[]]
     end)
-  end
-
-  defp params_keys(pattern) do
-    for {key, _value} <- Handlers.map_pattern_pairs(pattern), is_binary(key), do: key
   end
 
   defp closest(missing), do: Enum.min_by(missing, &length/1)

@@ -154,6 +154,28 @@ defmodule Soundcheck.Analysis.HandlersTest do
     assert Enum.map(sends, &{&1.call, &1.message}) == [{"send", {:tagged, :done, 3}}]
   end
 
+  describe "event_heads/1" do
+    test "returns each clause's literal event with the string keys its params require" do
+      assert Handlers.event_heads(SoundcheckFixtures.EventPayloadsLive) ==
+               {:ok,
+                [
+                  {"delete", ["id"]},
+                  {"open", ["postId"]},
+                  {"pick", ["value"]},
+                  {"filter", ["q"]},
+                  {"filter", []}
+                ]}
+    end
+
+    test "a clause whose event is not a literal is :any" do
+      assert Handlers.event_heads(SoundcheckFixtures.PatternsLive) == {:ok, [:any, :any]}
+    end
+
+    test "a module without debug info returns the error" do
+      assert {:error, _reason} = Handlers.event_heads(SoundcheckFixtures.NoDebugInfoLive)
+    end
+  end
+
   test "map_pattern_pairs/1 reads both sides of a `=` and no pairs from other patterns" do
     pattern = quote(do: %{"id" => id} = %{"name" => name})
 
