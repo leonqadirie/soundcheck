@@ -10,8 +10,10 @@ defmodule Soundcheck.Graph.Current do
   # Each link computes once per run, when the first check that needs it
   # asks; checks that ask meanwhile wait for that computation. Credo runs
   # its checks concurrently, so a check that needs no link, or a link
-  # already computed, never waits for the others. The graph and each link
-  # live in persistent terms, so checks read them without copying.
+  # already computed, never waits for the others. The graph and each
+  # link's stored form live in persistent terms, so checks read them
+  # without copying, and `Soundcheck.Graph.Link.resolve/2` points each
+  # check's copy of a link at the graph's own terms.
 
   alias Soundcheck.Graph
   alias Soundcheck.Graph.Input
@@ -26,7 +28,8 @@ defmodule Soundcheck.Graph.Current do
     needs
     |> Enum.uniq()
     |> Enum.reduce(graph, fn link, acc ->
-      Map.put(acc, link, Once.run_shared({__MODULE__, link}, fn -> Link.compute(link, graph) end))
+      stored = Once.run_shared({__MODULE__, link}, fn -> Link.compute(link, graph) end)
+      Map.put(acc, link, Link.resolve(stored, graph))
     end)
   end
 

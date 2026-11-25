@@ -19,6 +19,14 @@ defmodule Soundcheck.Analysis.Components do
   # whose only argument is the function's own assigns parameter, which
   # `render_index/1` records as a delegation and `render_templates/3`
   # follows.
+  #
+  # `render_index/1` returns the index in its stored form, where a call
+  # site is a `t:site_ref/0`: it gives the positions of the calling
+  # template and the element instead of holding them. A stored link crosses
+  # a process boundary or enters a persistent term, and both copy every
+  # graph term a link holds, once per reference. `resolve_index/2` swaps
+  # the references for the graph's own template and element, which costs
+  # no copy.
 
   alias Soundcheck.Beam.DebugInfo
   alias Soundcheck.Elixir.ModuleIndex
@@ -28,9 +36,18 @@ defmodule Soundcheck.Analysis.Components do
   alias Soundcheck.Once
 
   @type callee :: {:function, module(), atom()} | {:live_component, module()}
-  @type call_site :: {{module(), atom()}, term(), Node.Element.t()}
-  @type call_sites :: %{callee() => [call_site()]}
   @type delegators :: %{callee() => [{module(), atom()}]}
+
+  @typedoc "A call site: the calling template and the component element."
+  @type site :: {Template.t(), Node.Element.t()}
+
+  @typedoc """
+  A stored call site, `{module, fun, template, element}`: the calling
+  template's position among the templates `module.fun` owns, and the
+  element's position among that template's component elements, both in
+  source order.
+  """
+  @type site_ref :: {module(), atom(), non_neg_integer(), non_neg_integer()}
 
   defmodule Index do
     @moduledoc false
@@ -39,17 +56,23 @@ defmodule Soundcheck.Analysis.Components do
     @enforce_keys [:sites, :delegators]
     defstruct [:sites, :delegators]
 
-    @type t :: %__MODULE__{
-            sites: Soundcheck.Analysis.Components.call_sites(),
+    @type t :: t(Soundcheck.Analysis.Components.site())
+
+    @typedoc "The index as `Soundcheck.Analysis.Components.render_index/1` stores it."
+    @type stored :: t(Soundcheck.Analysis.Components.site_ref())
+
+    @type t(site) :: %__MODULE__{
+            sites: %{Soundcheck.Analysis.Components.callee() => [site]},
             delegators: Soundcheck.Analysis.Components.delegators()
           }
   end
 
   @doc """
-  Builds the render index: `call_sites/1` plus delegations. Each module's
-  delegations decode its expanded AST, so modules read in parallel.
+  Builds the stored render index: `call_sites/1` plus delegations. Each
+  module's delegations decode its expanded AST, so modules read in
+  parallel. `resolve_index/2` turns the result into the index checks read.
   """
-  @spec render_index(Graph.t()) :: Index.t()
+  @spec render_index(Graph.t()) :: Index.stored()
   def render_index(%Graph{} = graph) do
     project = MapSet.new(graph.modules, & &1.name)
 
@@ -153,10 +176,10 @@ defmodule Soundcheck.Analysis.Components do
   defp whole_param_call(_node, _var, _module, _defined), do: nil
 
   @doc """
-  Returns a map from each resolved callee to compact call-site references
-  in source order. Calls that do not resolve are left out.
+  Returns a map from each resolved callee to references to its call sites,
+  in source order. A call that does not resolve gets no entry.
   """
-  @spec call_sites(Graph.t()) :: call_sites()
+  @spec call_sites(Graph.t()) :: %{callee() => [site_ref()]}
   def call_sites(%Graph{} = graph) do
     modules = Map.new(graph.modules, &{&1.name, &1})
 
@@ -167,32 +190,61 @@ defmodule Soundcheck.Analysis.Components do
       |> parallel_map(&{&1, captures(&1)})
       |> Map.new()
 
-    sites =
-      for %Template{owner: {owner, _fun}} = template <- graph.templates,
-          %{} = entry <- [Map.get(modules, owner)],
-          captures = Map.fetch!(captures, owner),
-          element <- components(template.root),
-          {:ok, callee} <- [resolve(element, entry, captures)],
-          reduce: %{} do
-        acc ->
-          site = {template.owner, template.id, %{element | children: []}}
-          Map.update(acc, callee, [site], &[site | &1])
-      end
+    # `nth` counts the templates of one owner in graph order, the order
+    # `Graph.templates_of/3` returns them in.
+    {sites, _counts} =
+      Enum.reduce(graph.templates, {%{}, %{}}, fn
+        %Template{owner: {module, fun} = owner} = template, {sites, counts} ->
+          nth = Map.get(counts, owner, 0)
+          entry = Map.get(modules, module)
+          captures = Map.fetch!(captures, module)
+
+          sites =
+            for {element, position} <- Enum.with_index(components(template.root)),
+                entry != nil,
+                {:ok, callee} <- [resolve(element, entry, captures)],
+                reduce: sites do
+              acc ->
+                site = {module, fun, nth, position}
+                Map.update(acc, callee, [site], &[site | &1])
+            end
+
+          {sites, Map.put(counts, owner, nth + 1)}
+
+        %Template{}, acc ->
+          acc
+      end)
 
     Map.new(sites, fn {callee, sites} -> {callee, Enum.reverse(sites)} end)
   end
 
   @doc """
-  Returns `callee`'s call sites as `{template, element}` pairs, resolving
-  the render index's template references against `graph`, which must be
-  the graph the `:render_index` link was built from.
+  Swaps the call-site references of a stored render index for `graph`'s
+  own templates and elements. `graph` is the graph `render_index/1` read.
   """
-  @spec sites(Graph.t(), callee()) :: [{Template.t(), Node.Element.t()}]
-  def sites(%Graph{} = graph, callee) do
-    for {{module, fun}, id, element} <- Map.get(Graph.render_index(graph).sites, callee, []) do
-      template = Enum.find(Graph.templates_of(graph, module, fun), &(&1.id == id))
-      {template || raise("render index refers to a template missing from the graph"), element}
-    end
+  @spec resolve_index(Index.stored(), Graph.t()) :: Index.t()
+  def resolve_index(%Index{sites: refs} = index, %Graph{} = graph) do
+    # Each calling template's component elements, walked once however many
+    # call sites the template holds.
+    callers =
+      for({_callee, sites} <- refs, {module, fun, nth, _position} <- sites, uniq: true) do
+        {module, fun, nth}
+      end
+      |> Map.new(fn {module, fun, nth} = caller ->
+        template = graph |> Graph.templates_of(module, fun) |> Enum.fetch!(nth)
+        {caller, {template, template.root |> components() |> List.to_tuple()}}
+      end)
+
+    sites =
+      Map.new(refs, fn {callee, sites} ->
+        {callee,
+         for {module, fun, nth, position} <- sites do
+           {template, elements} = Map.fetch!(callers, {module, fun, nth})
+           {template, elem(elements, position)}
+         end}
+      end)
+
+    %{index | sites: sites}
   end
 
   @doc "Resolves one component element of a template owned by `entry`."

@@ -48,11 +48,12 @@ defmodule Soundcheck.Check.Warning.UnhandledInfoMessage do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
+    render_index = Graph.render_index(graph)
     routes = Graph.routes(graph)
 
     for {entry, kind} <- Graph.live_modules(graph),
         {:ok, [_ | _] = sends} <- [Handlers.self_sends(entry.name)],
-        receiver <- receivers(entry.name, kind, graph),
+        receiver <- receivers(entry.name, kind, render_index),
         {:ok, handlers} <- [Handlers.handler_set(receiver, :handle_info, routes)],
         sent <- sends,
         not Handlers.handles?(handlers, sent.message) do
@@ -67,10 +68,10 @@ defmodule Soundcheck.Check.Warning.UnhandledInfoMessage do
   end
 
   # A LiveComponent whose parents do not resolve reports nothing.
-  defp receivers(module, :view, _graph), do: [module]
+  defp receivers(module, :view, _render_index), do: [module]
 
-  defp receivers(module, :component, graph) do
-    case Events.parent_views(module, graph) do
+  defp receivers(module, :component, render_index) do
+    case Events.parent_views(module, render_index) do
       {:ok, parents} -> parents
       {:unverifiable, _reason} -> []
     end

@@ -6,7 +6,7 @@
     application: "Soundcheck.Application",
     cache: ["Soundcheck.Cache", "Soundcheck.Once"],
     orchestration: ["Soundcheck.Credo.*", "Soundcheck.Check", "Soundcheck.Rule"],
-    graph: ["Soundcheck.Graph", "Soundcheck.Graph.Input"],
+    graph: ["Soundcheck.Graph", "Soundcheck.Graph.Input", "Soundcheck.Graph.StoredLink"],
     linker: ["Soundcheck.Graph.Link", "Soundcheck.Graph.Current"],
     runner: ["Soundcheck.Runner", "Soundcheck.Runner.*"],
     output: "Soundcheck.Output.*",
