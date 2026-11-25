@@ -388,6 +388,20 @@ Use [`mix soundcheck`](#running-with-mix-soundcheck) when you need every related
 
 See [docs/architecture.md](https://github.com/leonqadirie/soundcheck/blob/main/docs/architecture.md) for the architecture, planned rule catalog, and design decisions.
 
+## Contributing
+
+Give the pull request a [Conventional Commits](https://www.conventionalcommits.org) title, such as `fix: resolve remote components through aliases`. CI rejects any other title, and the release changelog takes its entries from these titles.
+
+Run the checks CI runs before pushing:
+
+```sh
+mix test --cover
+mix lint
+mix hex.audit
+```
+
+CI also checks spelling with [typos](https://github.com/crate-ci/typos). With [Task](https://taskfile.dev) installed, `task ci` runs all four.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
