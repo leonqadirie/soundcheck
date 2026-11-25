@@ -53,6 +53,20 @@
          ":erlang.binary_to_atom",
          ":erlang.list_to_atom"
        ], except: ["Soundcheck.Graph"]},
+      # A link has a stored form, which holds no term of the graph, and the
+      # resolved form checks read. Only the linker computes and resolves
+      # links, and only `Soundcheck.Graph.Link` calls the analyses that
+      # build either form, so every link a check reads went through
+      # `Soundcheck.Graph.Link.resolve/2`.
+      {"Soundcheck.*", ["Soundcheck.Graph.Link.compute", "Soundcheck.Graph.Link.resolve"],
+       except: ["Soundcheck.Graph.Link", "Soundcheck.Graph.Current"]},
+      {"Soundcheck.*",
+       [
+         "Soundcheck.Analysis.Components.render_index",
+         "Soundcheck.Analysis.Components.resolve_index",
+         "Soundcheck.Analysis.LiveModules.kinds",
+         "Soundcheck.Analysis.LiveModules.entries"
+       ], except: ["Soundcheck.Graph.Link"]},
       {"Soundcheck.*", ["System.cmd", "System.shell", "Port.open", ":os.cmd"]},
       # Run state lives in the cache processes, not in ETS tables, the
       # process dictionary, or persistent terms owned elsewhere.
