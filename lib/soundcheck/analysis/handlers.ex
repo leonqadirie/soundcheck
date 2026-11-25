@@ -27,7 +27,6 @@ defmodule Soundcheck.Analysis.Handlers do
 
   alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Beam.DebugInfo
-  alias Soundcheck.Beam.Introspect
   alias Soundcheck.Once
 
   @type pattern ::
@@ -92,18 +91,18 @@ defmodule Soundcheck.Analysis.Handlers do
   @doc """
   Returns the handler set for `stage` (`:handle_event`, `:handle_info`, or
   `:handle_async`) of `module`, or `{:error, reason}` when the module cannot
-  be read. `routes` are the project's live routes (`MountHooks.routes/1`),
-  whose `live_session` hooks may attach handlers.
+  be read. `route_hooks` are the `live_session` hooks of the project's
+  live routes (`MountHooks.route_hooks/1`), which may attach handlers.
 
   The clause patterns and each module's `attach_hook` scan are memoized per
-  module and stage; which hook modules apply depends on `routes`, so each
-  call works that out afresh.
+  module and stage; which hook modules apply depends on `route_hooks`, so
+  each call works that out afresh.
   """
-  @spec handler_set(module(), atom(), [Introspect.route()]) ::
+  @spec handler_set(module(), atom(), MountHooks.route_hooks()) ::
           {:ok, handler_set()} | {:error, DebugInfo.error()}
-  def handler_set(module, stage, routes) when is_map_key(@stages, stage) do
+  def handler_set(module, stage, route_hooks) when is_map_key(@stages, stage) do
     with {:ok, patterns} <- patterns(module, stage) do
-      {:ok, HandlerSet.new(patterns, attach_hook_reasons(module, stage, routes))}
+      {:ok, HandlerSet.new(patterns, attach_hook_reasons(module, stage, route_hooks))}
     end
   end
 
@@ -113,6 +112,32 @@ defmodule Soundcheck.Analysis.Handlers do
            do: {:ok, Enum.flat_map(clauses, &clause_patterns(&1, stage))}
     end)
   end
+
+  @typedoc """
+  The head of a `handle_event/3` clause: the literal event with the string
+  keys its params pattern requires, or `:any` for a clause whose event is
+  not a literal.
+  """
+  @type event_head :: {event :: String.t(), keys :: [String.t()]} | :any
+
+  @doc """
+  Returns the head of each `handle_event/3` clause of `module`, in clause
+  order. Memoized per module: reading the clauses copies the module's
+  whole definition out of the cache, and the heads hold no clause body.
+  """
+  @spec event_heads(module()) :: {:ok, [event_head()]} | {:error, DebugInfo.error()}
+  def event_heads(module) do
+    Once.run({__MODULE__, :event_heads, module}, fn ->
+      with {:ok, clauses} <- DebugInfo.clauses(module, :handle_event, 3),
+           do: {:ok, Enum.map(clauses, &event_head/1)}
+    end)
+  end
+
+  defp event_head({_meta, [event, params, _socket], _guards, _body}) when is_binary(event) do
+    {event, for({key, _value} <- map_pattern_pairs(params), is_binary(key), do: key)}
+  end
+
+  defp event_head({_meta, _args, _guards, _body}), do: :any
 
   @doc """
   The `{key, value}` pairs a map pattern requires, including both sides of
@@ -254,10 +279,10 @@ defmodule Soundcheck.Analysis.Handlers do
   LiveView from calling the module's own callback. Returns `[]` when no
   hook attaches to `stage`, which can be any lifecycle stage.
   """
-  @spec attach_hook_reasons(module(), atom(), [Introspect.route()]) ::
+  @spec attach_hook_reasons(module(), atom(), MountHooks.route_hooks()) ::
           [Soundcheck.Diagnostic.reason()]
-  def attach_hook_reasons(module, stage, routes) do
-    [module | MountHooks.hook_modules(module, routes)]
+  def attach_hook_reasons(module, stage, route_hooks) do
+    [module | MountHooks.hook_modules(module, route_hooks)]
     |> Enum.uniq()
     |> Enum.flat_map(&attaches?(&1, stage))
     |> Enum.uniq()

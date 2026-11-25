@@ -58,10 +58,10 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
 
     for {entry, :view} <- Graph.live_modules(graph),
-        {candidates, resolution} <- [candidates(entry, routes)],
+        {candidates, resolution} <- [candidates(entry, route_hooks)],
         MapSet.size(candidates) > 0,
         template <- Components.render_templates(graph, entry.name),
         {:ok, render_keys} <- [Assigns.render_keys(graph, template)],
@@ -82,7 +82,7 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
   # Keys mount/3 may assign when connected but never when disconnected, minus
   # what handle_params/3 and on_mount hooks assign, with the resolution. A
   # disconnected mount that navigates away on every path never renders.
-  defp candidates(entry, routes) do
+  defp candidates(entry, route_hooks) do
     mount = Map.get(entry.functions, {:mount, 3}, [])
     connected = Assigns.mount(mount, true)
     disconnected = Assigns.mount(mount, false)
@@ -91,7 +91,7 @@ defmodule Soundcheck.Check.Warning.AssignSetOnlyWhenConnected do
       {MapSet.new(), :resolved}
     else
       params = Assigns.any_path(Map.get(entry.functions, {:handle_params, 3}, []))
-      {hook_keys, hooks_known?} = MountHooks.keys(entry.name, routes)
+      {hook_keys, hooks_known?} = MountHooks.keys(entry.name, route_hooks)
 
       keys =
         connected.may

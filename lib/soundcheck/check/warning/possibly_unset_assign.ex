@@ -61,11 +61,11 @@ defmodule Soundcheck.Check.Warning.PossiblyUnsetAssign do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    routes = Graph.routes(graph)
+    route_hooks = MountHooks.route_hooks(Graph.routes(graph))
     assumed = MapSet.new(Keyword.fetch!(params, :assume_set))
 
     for {entry, :view} <- Graph.live_modules(graph),
-        {:ok, guaranteed, resolution} <- [guaranteed(entry, routes, assumed)],
+        {:ok, guaranteed, resolution} <- [guaranteed(entry, route_hooks, assumed)],
         template <- Components.render_templates(graph, entry.name),
         {:ok, render_keys} <- [Assigns.render_keys(graph, template)],
         read <- template |> Reads.unconditional() |> Enum.uniq_by(& &1.key),
@@ -95,7 +95,7 @@ defmodule Soundcheck.Check.Warning.PossiblyUnsetAssign do
   # hooks, or the team's conventions may set. A context whose every mount
   # path navigates away never renders. Keys render/1 sets before a template
   # count per template.
-  defp guaranteed(entry, routes, assumed) do
+  defp guaranteed(entry, route_hooks, assumed) do
     mount = Map.get(entry.functions, {:mount, 3}, [])
     disconnected = Assigns.mount(mount, false)
     connected = Assigns.mount(mount, true)
@@ -104,7 +104,7 @@ defmodule Soundcheck.Check.Warning.PossiblyUnsetAssign do
       :skip
     else
       params = Assigns.any_path(Map.get(entry.functions, {:handle_params, 3}, []))
-      {hook_keys, hooks_known?} = MountHooks.keys(entry.name, routes)
+      {hook_keys, hooks_known?} = MountHooks.keys(entry.name, route_hooks)
       elsewhere = params.may |> MapSet.union(hook_keys) |> MapSet.union(assumed)
 
       guaranteed = %{

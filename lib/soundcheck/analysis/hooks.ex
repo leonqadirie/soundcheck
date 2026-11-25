@@ -39,14 +39,16 @@ defmodule Soundcheck.Analysis.Hooks do
     @moduledoc false
     # The hooks the project registers with `LiveSocket`, by name. `socket?`
     # is `false` when no JavaScript file constructs a `LiveSocket`; `open`
-    # lists the reasons the names may be incomplete.
+    # lists the reasons the names may be incomplete. `files` maps each
+    # JavaScript file's expanded path to its facts, for following imports.
     @enforce_keys [:socket?]
-    defstruct [:socket?, names: %{}, open: []]
+    defstruct [:socket?, names: %{}, open: [], files: %{}]
 
     @type t :: %__MODULE__{
             socket?: boolean(),
             names: %{String.t() => Soundcheck.Analysis.Hooks.definition()},
-            open: [term()]
+            open: [term()],
+            files: %{Path.t() => Soundcheck.JS.Extractor.Facts.t()}
           }
   end
 
@@ -75,7 +77,7 @@ defmodule Soundcheck.Analysis.Hooks do
     by_path = Map.new(js, &{Path.expand(&1.file), &1})
     colocated = colocated(graph)
 
-    Enum.reduce(sockets, %Registry{socket?: sockets != []}, fn facts, acc ->
+    Enum.reduce(sockets, %Registry{socket?: sockets != [], files: by_path}, fn facts, acc ->
       %Extractor.Names{names: names, open: open} = Extractor.registry(facts)
       acc = add_names(acc, facts, names)
       Enum.reduce(open, acc, &resolve_open(&1, facts, &2, by_path, colocated))
@@ -83,21 +85,19 @@ defmodule Soundcheck.Analysis.Hooks do
   end
 
   @doc """
-  Returns the events a registered hook pushes and handles, or `:unknown`
+  Returns the events a hook of `registry` pushes and handles, or `:unknown`
   when its definition does not resolve to an object literal.
   """
-  @spec events(Graph.t(), definition()) ::
+  @spec events(registry(), definition()) ::
           {:ok, Extractor.hook_events()} | :unknown
-  def events(_graph, {:colocated, _template, facts}) do
+  def events(%Registry{}, {:colocated, _template, facts}) do
     case facts.exports do
       %{default: {:object, id}} -> {:ok, Extractor.events_in(facts, id)}
       _other -> :unknown
     end
   end
 
-  def events(%Graph{js: js}, {:socket, facts, ref}) do
-    by_path = Map.new(js, &{Path.expand(&1.file), &1})
-
+  def events(%Registry{files: by_path}, {:socket, facts, ref}) do
     case object_of(facts, ref, by_path, 4) do
       {:ok, owner, id} -> {:ok, Extractor.events_in(owner, id)}
       :error -> :unknown

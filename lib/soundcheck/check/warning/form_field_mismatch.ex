@@ -109,8 +109,7 @@ defmodule Soundcheck.Check.Warning.FormFieldMismatch do
   defp forms(graph, %{name: module, kind: kind} = entry) do
     names = form_names(entry)
 
-    for template <- graph.templates,
-        match?({^module, _fun}, template.owner),
+    for template <- Graph.templates_of(graph, module),
         %Node.Element{} = element <- Walker.elements(template.root),
         {:ok, form_ref, name} <- [form(element, names)],
         targets_self?(element, kind),

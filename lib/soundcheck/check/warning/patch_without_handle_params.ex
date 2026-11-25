@@ -47,6 +47,7 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
 
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Analysis.LiveHosts
+  alias Soundcheck.Analysis.MountHooks
   alias Soundcheck.Analysis.Navigation
   alias Soundcheck.Analysis.Routes
   alias Soundcheck.Beam.Introspect
@@ -59,13 +60,14 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
     views = Graph.live_modules(graph)
 
     index = Routes.index(routes)
+    route_hooks = MountHooks.route_hooks(routes)
 
-    own(views, graph, routes, index) ++
-      hosted(views, graph, routes, index, Graph.live_hosts(graph))
+    own(views, graph, route_hooks, index) ++
+      hosted(views, graph, route_hooks, index, Graph.live_hosts(graph))
   end
 
   # Patches back to the LiveView that calls them.
-  defp own(views, graph, routes, index) do
+  defp own(views, graph, route_hooks, index) do
     for {entry, :view} <- views,
         not handle_params?(entry.name),
         {path, span, anchor} <- Navigation.targets(graph, entry, :patch),
@@ -77,7 +79,7 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
         "This patch returns to `#{inspect(entry.name)}`, which defines no " <>
           "`handle_params/3`; LiveView raises. Define `handle_params/3` or navigate instead.",
         anchor: anchor,
-        resolution: hook_resolution([entry.name], routes)
+        resolution: hook_resolution([entry.name], route_hooks)
       )
     end
   end
@@ -88,7 +90,7 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
   # the matching routes LiveView rejects the patch, and none of those that
   # render one defines `handle_params/3`. A client patch does not qualify:
   # under a LiveView that renders none of the routes it navigates instead.
-  defp hosted(views, graph, routes, index, hosts) do
+  defp hosted(views, graph, route_hooks, index, hosts) do
     for {entry, :view} <- views,
         named = LiveHosts.hosts(hosts, entry.name),
         named != [],
@@ -107,15 +109,15 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
           "defines no `handle_params/3`; LiveView raises. Define `handle_params/3` there " <>
           "or navigate instead.",
         anchor: anchor,
-        resolution: hook_resolution(targets, routes)
+        resolution: hook_resolution(targets, route_hooks)
       )
     end
   end
 
   # A `handle_params` hook that halts keeps LiveView from calling the
   # callback, so the patch may be valid without one.
-  defp hook_resolution(modules, routes) do
-    case Enum.flat_map(modules, &Handlers.attach_hook_reasons(&1, :handle_params, routes)) do
+  defp hook_resolution(modules, route_hooks) do
+    case Enum.flat_map(modules, &Handlers.attach_hook_reasons(&1, :handle_params, route_hooks)) do
       [] -> :resolved
       [reason | _] -> {:unverifiable, reason}
     end

@@ -218,7 +218,7 @@ defmodule Soundcheck.Analysis.AssignUse do
   # Reads in other project modules' functions that receive the socket. A
   # helper's own calls into its module or others follow the same rule.
   defp helper_reads(graph, entry) do
-    modules = Map.new(graph.modules, &{&1.name, &1})
+    modules = graph.modules_by_name
 
     calls =
       for {_name_arity, clauses} <- entry.functions,

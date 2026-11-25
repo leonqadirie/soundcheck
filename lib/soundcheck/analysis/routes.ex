@@ -28,18 +28,26 @@ defmodule Soundcheck.Analysis.Routes do
 
   defmodule Index do
     @moduledoc false
-    # Live routes with their paths split once. `open` holds the routes whose
-    # first segment is a parameter or a glob, which a path can match
-    # whatever its first segment is. `by_first` maps a literal first segment
-    # to the routes that start with it plus the open ones: every route a
-    # path starting with that literal can match. The root route has no
-    # first segment and appears only in `rows`. Every list is in route
-    # order, so matches come back in route order.
-    @enforce_keys [:rows, :by_first, :open]
-    defstruct [:rows, :by_first, :open]
+    # Live routes as a trie over their path segments. A node holds the
+    # routes that end there (`ends`), the routes whose next segment is a
+    # glob (`globs`), one child per literal next segment (`literals`), and
+    # one child for every parameter next segment (`param`). A route is its
+    # position among the indexed routes and the route itself.
+    #
+    # Matching a path walks only the children its segments allow, so the
+    # work follows the routes that share the path's prefix, not every
+    # route. Routes under one scope (`/admin/...`) or behind a leading
+    # parameter (`/:locale/...`) share their first segment, so an index on
+    # that segment alone would not narrow them.
+    defstruct ends: [], globs: [], literals: %{}, param: nil
 
-    @type row :: {position :: non_neg_integer(), route :: map(), segments :: [String.t()]}
-    @type t :: %__MODULE__{rows: [row()], by_first: %{String.t() => [row()]}, open: [row()]}
+    @type route :: {position :: non_neg_integer(), route :: map()}
+    @type t :: %__MODULE__{
+            ends: [route()],
+            globs: [route()],
+            literals: %{String.t() => t()},
+            param: t() | nil
+          }
   end
 
   @doc """
@@ -48,41 +56,62 @@ defmodule Soundcheck.Analysis.Routes do
   """
   @spec index([map()]) :: Index.t()
   def index(routes) do
-    rows =
-      for {route, position} <- Enum.with_index(routes),
-          do: {position, route, String.split(route.path, "/", trim: true)}
+    {index, _count} =
+      Enum.reduce(routes, {%Index{}, 0}, fn route, {index, position} ->
+        segments = String.split(route.path, "/", trim: true)
+        {insert(index, segments, {position, route}), position + 1}
+      end)
 
-    {open, literal} =
-      Enum.split_with(rows, fn {_position, _route, segments} -> open?(segments) end)
-
-    # Rows sort by their position, so merging two lists in route order
-    # yields a list in route order.
-    by_first =
-      for({_position, _route, [first | _rest]} = row <- literal, do: {first, row})
-      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-      |> Map.new(fn {first, group} -> {first, :lists.merge(group, open)} end)
-
-    %Index{rows: rows, open: open, by_first: by_first}
+    index
   end
 
-  defp open?([":" <> _param | _rest]), do: true
-  defp open?(["*" <> _glob | _rest]), do: true
-  defp open?(_segments), do: false
+  defp insert(%Index{} = node, [], route), do: %{node | ends: [route | node.ends]}
+
+  defp insert(%Index{} = node, ["*" <> _glob | _rest], route),
+    do: %{node | globs: [route | node.globs]}
+
+  defp insert(%Index{} = node, [":" <> _param | rest], route),
+    do: %{node | param: insert(node.param || %Index{}, rest, route)}
+
+  defp insert(%Index{} = node, [literal | rest], route) do
+    child = Map.get(node.literals, literal, %Index{})
+    %{node | literals: Map.put(node.literals, literal, insert(child, rest, route))}
+  end
 
   @doc "The routes of `index` whose path can match `segments`, in route order."
   @spec matching(Index.t(), [segment()]) :: [map()]
   def matching(%Index{} = index, segments) do
-    for {_position, route, route_segments} <- candidates(index, segments),
-        matches?(route_segments, segments),
-        do: route
+    # A path with `:any` reaches a route along several walks; the map keeps
+    # each route once, and sorting it by position restores route order.
+    index
+    |> collect(segments, %{})
+    |> Enum.sort()
+    |> Enum.map(fn {_position, route} -> route end)
   end
 
-  # A path that starts with a literal matches only the routes that start
-  # with the same literal, and the open ones.
-  defp candidates(%Index{by_first: by_first, open: open}, [first | _rest]) when is_binary(first),
-    do: Map.get(by_first, first, open)
+  defp collect(nil, _segments, found), do: found
 
-  defp candidates(%Index{rows: rows}, _segments), do: rows
+  # A glob matches whatever is left of the path, nothing included.
+  defp collect(%Index{globs: globs} = node, segments, found),
+    do: walk(node, segments, Enum.into(globs, found))
+
+  defp walk(node, [], found), do: Enum.into(node.ends, found)
+
+  # `:any` consumes no route segments, or one and stays in place for more.
+  defp walk(node, [:any | rest] = segments, found) do
+    found = walk(node, rest, found)
+    Enum.reduce(children(node), found, &collect(&1, segments, &2))
+  end
+
+  defp walk(node, [:dynamic | rest], found),
+    do: Enum.reduce(children(node), found, &collect(&1, rest, &2))
+
+  defp walk(node, [literal | rest], found) do
+    found = collect(Map.get(node.literals, literal), rest, found)
+    collect(node.param, rest, found)
+  end
+
+  defp children(%Index{literals: literals, param: param}), do: [param | Map.values(literals)]
 
   # Marks each interpolation with a NUL byte, then turns every segment that
   # holds one into `dynamic`.
@@ -99,19 +128,4 @@ defmodule Soundcheck.Analysis.Routes do
     |> hd()
     |> String.split("/", trim: true)
   end
-
-  defp matches?(["*" <> _glob | _rest], _segments), do: true
-
-  # `:any` consumes no route segments, or one and stays in place for more.
-  defp matches?(route, [:any | segments] = any),
-    do: matches?(route, segments) or (route != [] and matches?(tl(route), any))
-
-  defp matches?([], []), do: true
-  defp matches?([], _segments), do: false
-  defp matches?(_route, []), do: false
-
-  defp matches?([":" <> _param | route], [_segment | segments]), do: matches?(route, segments)
-  defp matches?([_literal | route], [:dynamic | segments]), do: matches?(route, segments)
-  defp matches?([literal | route], [literal | segments]), do: matches?(route, segments)
-  defp matches?(_route, _segments), do: false
 end
