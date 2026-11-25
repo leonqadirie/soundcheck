@@ -74,12 +74,16 @@ defmodule Soundcheck.Analysis.Components do
   """
   @spec render_index(Graph.t()) :: Index.stored()
   def render_index(%Graph{} = graph) do
-    project = MapSet.new(graph.modules, & &1.name)
+    # Each task gets a module name and reads that module's delegations. The
+    # caller keeps the delegations whose target is a project module. A task
+    # that took the entry, or filtered against the graph, would copy the
+    # entry or the graph into its process. Each name is read once: a name
+    # that two entries share would record its delegations twice.
+    names = for %{name: name} <- graph.modules, name != nil, uniq: true, do: name
 
     delegators =
-      for {module, delegates} <-
-            parallel_map(graph.modules, &{&1.name, delegates(&1.name, project)}),
-          {fun, {target, target_fun}} <- delegates,
+      for {module, delegates} <- parallel_map(names, &{&1, all_delegates(&1)}),
+          {fun, {target, target_fun}} <- project_delegates(delegates, graph),
           reduce: %{} do
         acc ->
           Map.update(acc, {:function, target, target_fun}, [{module, fun}], &[{module, fun} | &1])
@@ -94,20 +98,18 @@ defmodule Soundcheck.Analysis.Components do
   """
   @spec render_templates(Graph.t(), module(), atom()) :: [Template.t()]
   def render_templates(%Graph{} = graph, module, fun \\ :render) do
-    project = MapSet.new(graph.modules, & &1.name)
-
     {module, fun}
-    |> delegated_functions(project, [])
+    |> delegated_functions(graph, [])
     |> Enum.flat_map(fn {module, fun} -> Graph.templates_of(graph, module, fun) end)
   end
 
-  defp delegated_functions({module, fun} = function, project, seen) do
+  defp delegated_functions({module, fun} = function, graph, seen) do
     if function in seen do
       seen
     else
-      for {^fun, target} <- delegates(module, project),
+      for {^fun, target} <- delegates(module, graph),
           reduce: seen ++ [function],
-          do: (acc -> delegated_functions(target, project, acc))
+          do: (acc -> delegated_functions(target, graph, acc))
     end
   end
 
@@ -119,11 +121,17 @@ defmodule Soundcheck.Analysis.Components do
 
   # `{fun, {target_module, target_fun}}` for each arity-1 function of
   # `module` that calls a project function with its own parameter as the
-  # only argument. Memoized per module: every rule asks for the same edges.
-  defp delegates(module, project) do
-    module
-    |> then(&Once.run({__MODULE__, :delegates, &1}, fn -> read_delegates(&1) end))
-    |> Enum.filter(fn {_fun, {target, _target_fun}} -> MapSet.member?(project, target) end)
+  # only argument. `all_delegates/1` memoizes the calls to any module:
+  # every rule asks for the same edges.
+  defp delegates(module, graph), do: module |> all_delegates() |> project_delegates(graph)
+
+  defp all_delegates(module),
+    do: Once.run({__MODULE__, :delegates, module}, fn -> read_delegates(module) end)
+
+  defp project_delegates(delegates, graph) do
+    Enum.filter(delegates, fn {_fun, {target, _target_fun}} ->
+      Graph.module(graph, target) != nil
+    end)
   end
 
   defp read_delegates(module) do

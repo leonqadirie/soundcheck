@@ -26,10 +26,63 @@ defmodule Soundcheck.Analysis.Routes do
 
   def segments(_expression), do: :error
 
-  @doc "The routes whose path can match `segments`."
-  @spec matching([map()], [segment()]) :: [map()]
-  def matching(routes, segments),
-    do: Enum.filter(routes, &matches?(route_segments(&1.path), segments))
+  defmodule Index do
+    @moduledoc false
+    # Live routes with their paths split once. `open` holds the routes whose
+    # first segment is a parameter or a glob, which a path can match
+    # whatever its first segment is. `by_first` maps a literal first segment
+    # to the routes that start with it plus the open ones: every route a
+    # path starting with that literal can match. The root route has no
+    # first segment and appears only in `rows`. Every list is in route
+    # order, so matches come back in route order.
+    @enforce_keys [:rows, :by_first, :open]
+    defstruct [:rows, :by_first, :open]
+
+    @type row :: {position :: non_neg_integer(), route :: map(), segments :: [String.t()]}
+    @type t :: %__MODULE__{rows: [row()], by_first: %{String.t() => [row()]}, open: [row()]}
+  end
+
+  @doc """
+  Indexes `routes` for `matching/2`. A check matches every navigation
+  against the routes, so it builds the index once.
+  """
+  @spec index([map()]) :: Index.t()
+  def index(routes) do
+    rows =
+      for {route, position} <- Enum.with_index(routes),
+          do: {position, route, String.split(route.path, "/", trim: true)}
+
+    {open, literal} =
+      Enum.split_with(rows, fn {_position, _route, segments} -> open?(segments) end)
+
+    # Rows sort by their position, so merging two lists in route order
+    # yields a list in route order.
+    by_first =
+      for({_position, _route, [first | _rest]} = row <- literal, do: {first, row})
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Map.new(fn {first, group} -> {first, :lists.merge(group, open)} end)
+
+    %Index{rows: rows, open: open, by_first: by_first}
+  end
+
+  defp open?([":" <> _param | _rest]), do: true
+  defp open?(["*" <> _glob | _rest]), do: true
+  defp open?(_segments), do: false
+
+  @doc "The routes of `index` whose path can match `segments`, in route order."
+  @spec matching(Index.t(), [segment()]) :: [map()]
+  def matching(%Index{} = index, segments) do
+    for {_position, route, route_segments} <- candidates(index, segments),
+        matches?(route_segments, segments),
+        do: route
+  end
+
+  # A path that starts with a literal matches only the routes that start
+  # with the same literal, and the open ones.
+  defp candidates(%Index{by_first: by_first, open: open}, [first | _rest]) when is_binary(first),
+    do: Map.get(by_first, first, open)
+
+  defp candidates(%Index{rows: rows}, _segments), do: rows
 
   # Marks each interpolation with a NUL byte, then turns every segment that
   # holds one into `dynamic`.
@@ -46,8 +99,6 @@ defmodule Soundcheck.Analysis.Routes do
     |> hd()
     |> String.split("/", trim: true)
   end
-
-  defp route_segments(path), do: String.split(path, "/", trim: true)
 
   defp matches?(["*" <> _glob | _rest], _segments), do: true
 

@@ -58,16 +58,19 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
     routes = Graph.routes(graph)
     views = Graph.live_modules(graph)
 
-    own(views, graph, routes) ++ hosted(views, graph, routes, Graph.live_hosts(graph))
+    index = Routes.index(routes)
+
+    own(views, graph, routes, index) ++
+      hosted(views, graph, routes, index, Graph.live_hosts(graph))
   end
 
   # Patches back to the LiveView that calls them.
-  defp own(views, graph, routes) do
+  defp own(views, graph, routes, index) do
     for {entry, :view} <- views,
         not handle_params?(entry.name),
         {path, span, anchor} <- Navigation.targets(graph, entry, :patch),
         {:ok, segments} <- [Routes.segments(path)],
-        Enum.any?(Routes.matching(routes, segments), &(&1.live_view == entry.name)) do
+        Enum.any?(Routes.matching(index, segments), &(&1.live_view == entry.name)) do
       Diagnostic.new(
         __MODULE__,
         span,
@@ -85,13 +88,13 @@ defmodule Soundcheck.Check.Warning.PatchWithoutHandleParams do
   # the matching routes LiveView rejects the patch, and none of those that
   # render one defines `handle_params/3`. A client patch does not qualify:
   # under a LiveView that renders none of the routes it navigates instead.
-  defp hosted(views, graph, routes, hosts) do
+  defp hosted(views, graph, routes, index, hosts) do
     for {entry, :view} <- views,
         named = LiveHosts.hosts(hosts, entry.name),
         named != [],
         {path, span, anchor} <- Navigation.targets(graph, entry, :patch, [:server]),
         {:ok, segments} <- [Routes.segments(path)],
-        [_ | _] = candidates <- [Routes.matching(routes, segments)],
+        [_ | _] = candidates <- [Routes.matching(index, segments)],
         targets = candidates |> Enum.map(& &1.live_view) |> Enum.uniq(),
         entry.name not in targets,
         [_ | _] = rendering <- [Enum.filter(named, &(&1 in targets))],
