@@ -55,14 +55,15 @@ defmodule Soundcheck.Check.Refactor.NavigateAcrossLiveSession do
       )
 
     index = Routes.index(routes)
+    by_view = Enum.group_by(routes, & &1.live_view)
 
     for {entry, :view} <- Graph.live_modules(graph),
-        origin = sessions(routes, &(&1.live_view == entry.name)),
+        origin = by_view |> Map.get(entry.name, []) |> sessions(),
         origin != [],
         {path, span, anchor} <- Navigation.targets(graph, entry, :navigate),
         {:ok, segments} <- [Routes.segments(path)],
         [_ | _] = candidates <- [Routes.matching(index, segments)],
-        targets = sessions(candidates, fn _route -> true end),
+        targets = sessions(candidates),
         Enum.all?(targets, &(&1 not in origin)) do
       Diagnostic.new(
         __MODULE__,
@@ -75,8 +76,7 @@ defmodule Soundcheck.Check.Refactor.NavigateAcrossLiveSession do
     end
   end
 
-  defp sessions(routes, filter),
-    do: routes |> Enum.filter(filter) |> Enum.map(& &1.live_session) |> Enum.uniq()
+  defp sessions(routes), do: routes |> Enum.map(& &1.live_session) |> Enum.uniq()
 
   defp list(sessions), do: Enum.map_join(sessions, " or ", &inspect/1)
 end
