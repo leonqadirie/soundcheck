@@ -71,23 +71,22 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    render_index = Graph.render_index(graph)
     js_helpers = Graph.js_helpers(graph)
-    index = %{render: render_index, routes: Graph.routes(graph)}
+    routes = Graph.routes(graph)
 
     for template <- graph.templates,
         emitter <- Events.emitters(template, js_helpers),
-        expanded <- Events.expand(template, emitter, render_index),
+        expanded <- Events.expand(template, emitter, graph),
         not ignored?(expanded, Keyword.fetch!(params, :ignore_events)),
-        diagnostic <- expanded_check(graph, template, emitter, expanded, index) do
+        diagnostic <- expanded_check(graph, template, emitter, expanded, routes) do
       diagnostic
     end
   end
 
-  defp expanded_check(graph, _template, _emitter, {:ok, site_template, site_emitter}, index),
-    do: check(graph, site_template, site_emitter, index)
+  defp expanded_check(graph, _template, _emitter, {:ok, site_template, site_emitter}, routes),
+    do: check(graph, site_template, site_emitter, routes)
 
-  defp expanded_check(graph, template, emitter, {:unverifiable, reason}, _index),
+  defp expanded_check(graph, template, emitter, {:unverifiable, reason}, _routes),
     do: [unverifiable(graph, template, emitter, reason)]
 
   defp ignored?({:ok, _template, %{event: {:literal, event}}}, ignore),
@@ -95,9 +94,9 @@ defmodule Soundcheck.Check.Warning.UnhandledEvent do
 
   defp ignored?(_expanded, _ignore), do: false
 
-  defp check(graph, template, emitter, index) do
-    case Events.receiver_reach(template, emitter, index.render) do
-      {:ok, reach} -> resolved(graph, template, emitter, reach, index.routes)
+  defp check(graph, template, emitter, routes) do
+    case Events.receiver_reach(template, emitter, graph) do
+      {:ok, reach} -> resolved(graph, template, emitter, reach, routes)
       {:unverifiable, reason} -> [unverifiable(graph, template, emitter, reason)]
     end
   end

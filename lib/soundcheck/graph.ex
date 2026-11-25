@@ -98,7 +98,7 @@ defmodule Soundcheck.Graph do
     * `:js_paths` - directories scanned for `.js`/`.ts` hook sources
       (default `["assets/js"]`)
   """
-  @spec build([input()], keyword()) :: t()
+  @spec build(Enumerable.t(), keyword()) :: t()
   def build(inputs, opts \\ []) do
     opts = Keyword.validate!(opts, js_paths: @default_js_paths)
 

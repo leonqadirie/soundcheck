@@ -44,7 +44,7 @@ defmodule Soundcheck.Credo.BuildGraphTaskTest do
     end
 
     test "carries the source and the AST Credo parsed" do
-      [input] = BuildGraphTask.inputs([source_file("lib/a.ex")], [])
+      [input] = [source_file("lib/a.ex")] |> BuildGraphTask.inputs([]) |> Enum.to_list()
 
       assert input.source == "defmodule A do\nend\n"
       assert {:defmodule, _meta, [{:__aliases__, _, [:A]}, _body]} = input.ast

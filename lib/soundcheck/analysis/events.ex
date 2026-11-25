@@ -30,6 +30,7 @@ defmodule Soundcheck.Analysis.Events do
   alias Soundcheck.Analysis.Handlers
   alias Soundcheck.Beam.Introspect
   alias Soundcheck.Diagnostic
+  alias Soundcheck.Graph
   alias Soundcheck.Heex.KeywordAttrs
   alias Soundcheck.Heex.Node
   alias Soundcheck.Heex.Template
@@ -104,14 +105,14 @@ defmodule Soundcheck.Analysis.Events do
   end
 
   @doc """
-  Resolves the modules that receive `emitter` from `template`, given the
-  index from `Soundcheck.Analysis.Components.render_index/1`. A call
+  Resolves the modules that receive `emitter` from `template`, given a
+  graph with the `:render_index` link. A call
   site whose attrs rule out an `:if` guard around the emitter
   (`Soundcheck.Analysis.Guards`) renders no route to it.
   """
-  @spec receivers(Template.t(), emitter(), Components.Index.t()) :: receivers()
-  def receivers(%Template{} = template, emitter, index) do
-    with {:ok, reach} <- receiver_reach(template, emitter, index),
+  @spec receivers(Template.t(), emitter(), Graph.t()) :: receivers()
+  def receivers(%Template{} = template, emitter, %Graph{} = graph) do
+    with {:ok, reach} <- receiver_reach(template, emitter, graph),
          do: {:ok, reach |> Map.keys() |> Enum.sort()}
   end
 
@@ -121,24 +122,24 @@ defmodule Soundcheck.Analysis.Events do
   `if`, `unless`, `case`, or `cond`) that no call site on the path proves.
   The emitter may never render for a guarded receiver.
   """
-  @spec receiver_reach(Template.t(), emitter(), Components.Index.t()) ::
+  @spec receiver_reach(Template.t(), emitter(), Graph.t()) ::
           Diagnostic.resolved(%{module() => boolean()})
   def receiver_reach(
         %Template{} = template,
         %{event: {:literal, _event}, target: target} = emitter,
-        index
+        %Graph{} = graph
       ) do
     case target do
-      :none -> root_reach(template, emitter.span, index, MapSet.new(), false)
-      :myself -> unguarded(target_component(template, :myself, index, @target_depth))
-      {:assign, key} -> unguarded(target_component(template, key, index, @target_depth))
+      :none -> root_reach(template, emitter.span, graph, MapSet.new(), false)
+      :myself -> unguarded(target_component(template, :myself, graph, @target_depth))
+      {:assign, key} -> unguarded(target_component(template, key, graph, @target_depth))
       :self_el -> unguarded(own_root(template))
       {:selector, _selector} -> {:unverifiable, :css_selector}
       :dynamic -> {:unverifiable, :dynamic_target}
     end
   end
 
-  def receiver_reach(_template, %{event: _not_literal}, _index),
+  def receiver_reach(_template, %{event: _not_literal}, _graph),
     do: {:unverifiable, :dynamic_event}
 
   defp unguarded({:ok, modules}), do: {:ok, Map.new(modules, &{&1, false})}
@@ -155,20 +156,20 @@ defmodule Soundcheck.Analysis.Events do
   `{:unverifiable, reason}` for paths that do not resolve. Emitters with a
   literal or dynamic event come back unchanged.
   """
-  @spec expand(Template.t(), emitter(), Components.Index.t()) ::
+  @spec expand(Template.t(), emitter(), Graph.t()) ::
           [{:ok, Template.t(), emitter()} | Diagnostic.unverifiable()]
-  def expand(template, emitter, call_sites), do: expand(template, emitter, call_sites, 3)
+  def expand(template, emitter, graph), do: expand(template, emitter, graph, 3)
 
-  defp expand(template, %Emitter{event: {:forward, key}} = emitter, call_sites, depth) do
+  defp expand(template, %Emitter{event: {:forward, key}} = emitter, graph, depth) do
     case {forward_callee(template), emitter.target, depth} do
       {_callee, _target, 0} -> [{:unverifiable, :dynamic_event}]
       {nil, _target, _depth} -> [{:unverifiable, :dynamic_event}]
       {_callee, target, _depth} when target != :none -> [{:unverifiable, :dynamic_target}]
-      {callee, :none, depth} -> forward_sites(callee, key, emitter.via, call_sites, depth)
+      {callee, :none, depth} -> forward_sites(callee, key, emitter.via, graph, depth)
     end
   end
 
-  defp expand(template, emitter, _call_sites, _depth), do: [{:ok, template, emitter}]
+  defp expand(template, emitter, _graph, _depth), do: [{:ok, template, emitter}]
 
   # The function component that owns the template, or `nil` when the owner
   # is a LiveView or LiveComponent render, where `@key` is a socket assign.
@@ -185,10 +186,10 @@ defmodule Soundcheck.Analysis.Events do
 
   # A delegation hands over the caller's assigns, where the attr is a
   # socket assign soundcheck cannot read.
-  defp forward_sites(callee, key, via, call_sites, depth) do
-    case Map.get(call_sites.sites, callee, []) do
+  defp forward_sites(callee, key, via, graph, depth) do
+    case Components.sites(graph, callee) do
       [] ->
-        if Map.has_key?(call_sites.delegators, callee),
+        if Map.has_key?(Graph.render_index(graph).delegators, callee),
           do: [{:unverifiable, :dynamic_event}],
           else: [{:unverifiable, :no_render_path}]
 
@@ -197,22 +198,22 @@ defmodule Soundcheck.Analysis.Events do
 
         for {caller, element} <- sites,
             %Node.Attr{name: ^name, value: value} <- element.attrs,
-            result <- forwarded_value(caller, value, via, call_sites, depth) do
+            result <- forwarded_value(caller, value, via, graph, depth) do
           result
         end
     end
   end
 
-  defp forwarded_value(caller, {:string, event, _delimiter, span}, via, _call_sites, _depth),
+  defp forwarded_value(caller, {:string, event, _delimiter, span}, via, _graph, _depth),
     do: [{:ok, caller, %Emitter{event: {:literal, event}, target: :none, via: via, span: span}}]
 
-  defp forwarded_value(caller, {:expr, ast, _source, span}, via, call_sites, depth) do
+  defp forwarded_value(caller, {:expr, ast, _source, span}, via, graph, depth) do
     case {expr_event(ast), js_pushes(ast, span.file)} do
       {{:forward, key}, _pushes} ->
         expand(
           caller,
           %Emitter{event: {:forward, key}, target: :none, via: via, span: span},
-          call_sites,
+          graph,
           depth - 1
         )
 
@@ -224,7 +225,7 @@ defmodule Soundcheck.Analysis.Events do
     end
   end
 
-  defp forwarded_value(_caller, nil, _via, _call_sites, _depth), do: []
+  defp forwarded_value(_caller, nil, _via, _graph, _depth), do: []
 
   # ── Emitters ──
 
@@ -362,12 +363,12 @@ defmodule Soundcheck.Analysis.Events do
   # a LiveView or LiveComponent render, only `@myself` resolves; in a
   # function component, `@key` is an attr its call sites set, or the
   # caller's own assign when a function hands it its assigns whole.
-  defp target_component(%Template{owner: {_module, _fun} = owner}, key, index, depth),
-    do: target_owner(owner, key, index, depth, MapSet.new())
+  defp target_component(%Template{owner: {_module, _fun} = owner}, key, graph, depth),
+    do: target_owner(owner, key, graph, depth, MapSet.new())
 
-  defp target_component(_template, _key, _index, _depth), do: {:unverifiable, :dynamic_target}
+  defp target_component(_template, _key, _graph, _depth), do: {:unverifiable, :dynamic_target}
 
-  defp target_owner({module, fun}, key, index, depth, seen) do
+  defp target_owner({module, fun}, key, graph, depth, seen) do
     case {Introspect.live(module), fun, key} do
       {{:ok, %{kind: :component}}, :render, :myself} ->
         {:ok, [module]}
@@ -385,18 +386,18 @@ defmodule Soundcheck.Analysis.Events do
         {:unverifiable, :dynamic_target}
 
       {_function_component, fun, key} ->
-        forwarded_target({:function, module, fun}, key, index, depth, seen)
+        forwarded_target({:function, module, fun}, key, graph, depth, seen)
     end
   end
 
   # Every call site must pass the attr on as `{@myself}` or another `{@key}`
   # that resolves. A function already on the path (a recursive component)
   # adds no receivers.
-  defp forwarded_target(_callee, _key, _index, 0, _seen), do: {:unverifiable, :dynamic_target}
+  defp forwarded_target(_callee, _key, _graph, 0, _seen), do: {:unverifiable, :dynamic_target}
 
-  defp forwarded_target(callee, key, index, depth, seen) do
-    sites = Map.get(index.sites, callee, [])
-    delegators = Map.get(index.delegators, callee, [])
+  defp forwarded_target(callee, key, graph, depth, seen) do
+    sites = Components.sites(graph, callee)
+    delegators = Map.get(Graph.render_index(graph).delegators, callee, [])
     seen? = MapSet.member?(seen, {callee, key})
     seen = MapSet.put(seen, {callee, key})
 
@@ -413,10 +414,10 @@ defmodule Soundcheck.Analysis.Events do
         site_targets =
           for {caller, element} <- sites do
             attr = Enum.find(element.attrs, &(&1.name == name))
-            site_target(caller, attr, index, depth - 1, seen)
+            site_target(caller, attr, graph, depth - 1, seen)
           end
 
-        delegated = for owner <- delegators, do: target_owner(owner, key, index, depth - 1, seen)
+        delegated = for owner <- delegators, do: target_owner(owner, key, graph, depth - 1, seen)
         union_modules(site_targets ++ delegated)
     end
   end
@@ -424,18 +425,18 @@ defmodule Soundcheck.Analysis.Events do
   defp site_target(
          %Template{owner: {_module, _fun} = owner},
          %Node.Attr{value: {:expr, ast, _source, _span}},
-         index,
+         graph,
          depth,
          seen
        ) do
     case expr_target(ast) do
-      :myself -> target_owner(owner, :myself, index, depth, seen)
-      {:assign, key} -> target_owner(owner, key, index, depth, seen)
+      :myself -> target_owner(owner, :myself, graph, depth, seen)
+      {:assign, key} -> target_owner(owner, key, graph, depth, seen)
       _other -> {:unverifiable, :dynamic_target}
     end
   end
 
-  defp site_target(_caller, _attr, _index, _depth, _seen), do: {:unverifiable, :dynamic_target}
+  defp site_target(_caller, _attr, _graph, _depth, _seen), do: {:unverifiable, :dynamic_target}
 
   defp union_modules(results) do
     Enum.reduce_while(results, {:ok, []}, fn
@@ -496,16 +497,16 @@ defmodule Soundcheck.Analysis.Events do
   # to the call sites and delegations that can render it. Maps each view to
   # whether every path to it crosses a condition nothing on the path proves
   # (`guarded?`).
-  defp root_reach(%Template{owner: nil}, _span, _index, _seen, _guarded?),
+  defp root_reach(%Template{owner: nil}, _span, _graph, _seen, _guarded?),
     do: {:unverifiable, :no_render_path}
 
-  defp root_reach(%Template{owner: owner} = template, span, index, seen, guarded?),
-    do: owner_reach(owner, {template, span}, index, seen, guarded?)
+  defp root_reach(%Template{owner: owner} = template, span, graph, seen, guarded?),
+    do: owner_reach(owner, {template, span}, graph, seen, guarded?)
 
   # `location` is the template position inside `owner` that must render, or
   # `nil` for a hop that enters `owner` whole (a delegation, or a
   # LiveComponent's parents).
-  defp owner_reach({module, fun} = owner, location, index, seen, guarded?) do
+  defp owner_reach({module, fun} = owner, location, graph, seen, guarded?) do
     if MapSet.member?(seen, owner) do
       {:ok, %{}}
     else
@@ -516,13 +517,13 @@ defmodule Soundcheck.Analysis.Events do
           {:ok, %{module => guarded? or conditions(location) != []}}
 
         {{:ok, %{kind: :component}}, :render} ->
-          via_sites({:live_component, module}, location, index, seen, guarded?)
+          via_sites({:live_component, module}, location, graph, seen, guarded?)
 
         {{:error, :not_loadable}, _fun} ->
           {:unverifiable, :not_loadable}
 
         {_live_or_not, fun} ->
-          via_sites({:function, module, fun}, location, index, seen, guarded?)
+          via_sites({:function, module, fun}, location, graph, seen, guarded?)
       end
     end
   end
@@ -532,11 +533,11 @@ defmodule Soundcheck.Analysis.Events do
 
   @doc """
   The LiveViews that render LiveComponent `module`, along every render
-  path, given the index from `Soundcheck.Analysis.Components.render_index/1`.
+  path, given a graph with the `:render_index` link.
   """
-  @spec parent_views(module(), Components.Index.t()) :: receivers()
-  def parent_views(module, index) do
-    with {:ok, reach} <- via_sites({:live_component, module}, nil, index, MapSet.new(), false),
+  @spec parent_views(module(), Graph.t()) :: receivers()
+  def parent_views(module, %Graph{} = graph) do
+    with {:ok, reach} <- via_sites({:live_component, module}, nil, graph, MapSet.new(), false),
          do: {:ok, reach |> Map.keys() |> Enum.sort()}
   end
 
@@ -545,11 +546,11 @@ defmodule Soundcheck.Analysis.Events do
   # from it. A hop that does not prove every condition around `location`
   # makes the rest of its path guarded; a delegation passes no attrs, so it
   # proves none.
-  defp via_sites(callee, location, index, seen, guarded?) do
+  defp via_sites(callee, location, graph, seen, guarded?) do
     guards = if location, do: Guards.at(elem(location, 0).root, elem(location, 1)), else: []
     conditions = conditions(location)
-    sites = Map.get(index.sites, callee, [])
-    delegators = Map.get(index.delegators, callee, [])
+    sites = Components.sites(graph, callee)
+    delegators = Map.get(Graph.render_index(graph).delegators, callee, [])
 
     if sites == [] and delegators == [] do
       {:unverifiable, :no_render_path}
@@ -562,24 +563,24 @@ defmodule Soundcheck.Analysis.Events do
       delegation_hops =
         for owner <- delegators, do: {{:owner, owner}, guarded? or conditions != []}
 
-      union_reach(site_hops ++ delegation_hops, index, seen)
+      union_reach(site_hops ++ delegation_hops, graph, seen)
     end
   end
 
   # Every hop's path must resolve; the first unverifiable one decides. A
   # view reached on any unguarded path is unguarded.
-  defp union_reach(hops, index, seen) do
+  defp union_reach(hops, graph, seen) do
     Enum.reduce_while(hops, {:ok, %{}}, fn {hop, guarded?}, {:ok, acc} ->
-      case hop_reach(hop, index, seen, guarded?) do
+      case hop_reach(hop, graph, seen, guarded?) do
         {:ok, reach} -> {:cont, {:ok, Map.merge(acc, reach, fn _view, a, b -> a and b end)}}
         unverifiable -> {:halt, unverifiable}
       end
     end)
   end
 
-  defp hop_reach({:owner, owner}, index, seen, guarded?),
-    do: owner_reach(owner, nil, index, seen, guarded?)
+  defp hop_reach({:owner, owner}, graph, seen, guarded?),
+    do: owner_reach(owner, nil, graph, seen, guarded?)
 
-  defp hop_reach({template, element}, index, seen, guarded?),
-    do: root_reach(template, element.span, index, seen, guarded?)
+  defp hop_reach({template, element}, graph, seen, guarded?),
+    do: root_reach(template, element.span, graph, seen, guarded?)
 end

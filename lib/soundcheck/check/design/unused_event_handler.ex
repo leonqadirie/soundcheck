@@ -56,13 +56,12 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
   # Every `{module, event}` some emitter reaches, or `:open_world` when any
   # emitter in the project does not resolve.
   defp reached_events(graph) do
-    render_index = Graph.render_index(graph)
     js_helpers = Graph.js_helpers(graph)
 
     expanded =
       for template <- graph.templates,
           emitter <- Events.emitters(template, js_helpers),
-          result <- Events.expand(template, emitter, render_index),
+          result <- Events.expand(template, emitter, graph),
           do: result
 
     # Pushes from helper classes (`this.hook.pushEvent(...)`) sit outside
@@ -73,19 +72,19 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
     else
       emitters = for {:ok, template, emitter} <- expanded, do: {template, emitter}
 
-      with {:ok, reached} <- add_emitters(emitters, MapSet.new(), render_index),
-           do: with_hook_pushes(graph, reached, render_index)
+      with {:ok, reached} <- add_emitters(emitters, MapSet.new(), graph),
+           do: with_hook_pushes(graph, reached)
     end
   end
 
-  defp with_hook_pushes(graph, reached, render_index) do
+  defp with_hook_pushes(graph, reached) do
     registry = Hooks.registry(graph)
 
     Enum.reduce_while(Hooks.usages(graph), {:ok, reached}, fn usage, {:ok, acc} ->
       with {:ok, definition} <- Map.fetch(registry.names, usage.name),
            {:ok, %{pushes: pushes}} <- Hooks.events(graph, definition),
            emitters = Enum.map(pushes, &{usage.template, push_emitter(&1)}),
-           {:ok, acc} <- add_emitters(emitters, acc, render_index) do
+           {:ok, acc} <- add_emitters(emitters, acc, graph) do
         {:cont, {:ok, acc}}
       else
         _unresolved -> {:halt, :open_world}
@@ -98,9 +97,9 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
     %Events.Emitter{event: push.event, target: target, via: "hook", span: push.span}
   end
 
-  defp add_emitters(emitters, reached, render_index) do
+  defp add_emitters(emitters, reached, graph) do
     Enum.reduce_while(emitters, {:ok, reached}, fn {template, emitter}, {:ok, acc} ->
-      case {emitter.event, Events.receivers(template, emitter, render_index)} do
+      case {emitter.event, Events.receivers(template, emitter, graph)} do
         {{:literal, event}, {:ok, modules}} ->
           {:cont, {:ok, Enum.into(modules, acc, &{&1, event})}}
 

@@ -4,6 +4,9 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
   import Soundcheck.HeexCase, only: [text_at: 2]
 
   alias Soundcheck.Check.Warning.EventPayloadMismatch
+  alias Soundcheck.Graph
+  alias Soundcheck.Graph.Link
+  alias Soundcheck.Rule
 
   @fixture "test/support/fixtures/event_payloads.ex"
 
@@ -32,5 +35,57 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
   test "metadata_keys count as sent by every click" do
     diagnostics = analyze(EventPayloadMismatch, fixture(), metadata_keys: ["id"])
     assert texts(diagnostics) == ["open", "pick"]
+  end
+
+  test "many calls do not copy their full template into the render index" do
+    calls = 100
+    padding = String.duplicate("x", 100_000)
+
+    rendered_calls =
+      Enum.map_join(1..calls, "\n", fn _ -> ~s|<.save_button label="Save" />| end)
+
+    source = """
+    defmodule SoundcheckFixtures.EventPayloadCallsLive do
+      use Phoenix.LiveView
+      import SoundcheckFixtures.EventComponents
+
+      def render(assigns) do
+        ~H\"\"\"
+        #{padding}
+        #{rendered_calls}
+        \"\"\"
+      end
+    end
+    """
+
+    graph =
+      [
+        {"lib/event_payload_calls_live.ex", source},
+        {"lib/event_components.ex", File.read!("test/support/fixtures/events.ex")}
+      ]
+      |> inputs()
+      |> Graph.build(js_paths: [])
+      |> Link.link(EventPayloadMismatch.needs())
+
+    index = Graph.render_index(graph)
+
+    template =
+      Enum.find(
+        graph.templates,
+        &(&1.owner == {SoundcheckFixtures.EventPayloadCallsLive, :render})
+      )
+
+    bytes = fn term -> :erts_debug.flat_size(term) * :erlang.system_info(:wordsize) end
+
+    assert bytes.(index) < bytes.(template) * 3
+
+    params = EventPayloadMismatch.param_defaults()
+    diagnostics = Rule.run(EventPayloadMismatch, graph, params)
+
+    assert [diagnostic] = diagnostics
+    assert diagnostic.primary.file == "lib/event_components.ex"
+    assert diagnostic.primary.start == {7, 55}
+    assert diagnostic.message =~ ~s(`phx-click="save"` sends no "id")
+    assert diagnostic.message =~ "`SoundcheckFixtures.EventPayloadCallsLive`"
   end
 end

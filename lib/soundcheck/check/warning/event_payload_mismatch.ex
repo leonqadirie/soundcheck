@@ -59,7 +59,6 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, params) do
-    render_index = Graph.render_index(graph)
     js_helpers = Graph.js_helpers(graph)
     metadata = MapSet.new(Keyword.fetch!(params, :metadata_keys), &to_string/1)
     routes = Graph.routes(graph)
@@ -70,7 +69,7 @@ defmodule Soundcheck.Check.Warning.EventPayloadMismatch do
         click = %{element | attrs: Enum.filter(element.attrs, &(&1.name in @click_attrs))},
         %{event: {:literal, event}} = emitter <- Events.element_emitters(click, js_helpers),
         {:ok, sent} <- [payload(element, emitter, metadata)],
-        {:ok, receivers} <- [Events.receivers(template, emitter, render_index)],
+        {:ok, receivers} <- [Events.receivers(template, emitter, graph)],
         receiver <- receivers,
         {:ok, missing} <- [missing(receiver, event, sent, routes)] do
       Diagnostic.new(__MODULE__, emitter.span, message(emitter, event, receiver, missing, sent),

@@ -52,21 +52,21 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
     registry = Hooks.registry(graph)
-    index = %{render: Graph.render_index(graph), routes: Graph.routes(graph)}
+    routes = Graph.routes(graph)
 
     diagnostics =
       for %{name: name} = usage <- Hooks.usages(graph),
           {:ok, definition} <- [Map.fetch(registry.names, name)],
           {:ok, %{pushes: pushes}} <- [Hooks.events(graph, definition)],
           %{event: {:literal, event}} = push <- pushes,
-          diagnostic <- check(graph, usage, push, event, index) do
+          diagnostic <- check(graph, usage, push, event, routes) do
         diagnostic
       end
 
     Enum.uniq_by(diagnostics, &{&1.anchor, &1.message})
   end
 
-  defp check(graph, usage, push, event, index) do
+  defp check(graph, usage, push, event, routes) do
     emitter = %Emitter{
       event: {:literal, event},
       target: target(push),
@@ -74,8 +74,8 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
       span: push.span
     }
 
-    with {:ok, receivers} <- Events.receivers(usage.template, emitter, index.render),
-         {:missing, missing} <- Events.check_handled(receivers, event, index.routes) do
+    with {:ok, receivers} <- Events.receivers(usage.template, emitter, graph),
+         {:missing, missing} <- Events.check_handled(receivers, event, routes) do
       [diagnostic(graph, usage, emitter, event, missing, :resolved)]
     else
       :handled ->

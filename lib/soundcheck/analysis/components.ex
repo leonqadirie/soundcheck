@@ -28,7 +28,8 @@ defmodule Soundcheck.Analysis.Components do
   alias Soundcheck.Once
 
   @type callee :: {:function, module(), atom()} | {:live_component, module()}
-  @type call_sites :: %{callee() => [{Template.t(), Node.Element.t()}]}
+  @type call_site :: {{module(), atom()}, term(), Node.Element.t()}
+  @type call_sites :: %{callee() => [call_site()]}
   @type delegators :: %{callee() => [{module(), atom()}]}
 
   defmodule Index do
@@ -152,9 +153,8 @@ defmodule Soundcheck.Analysis.Components do
   defp whole_param_call(_node, _var, _module, _defined), do: nil
 
   @doc """
-  Returns a map from each resolved callee to its call sites: the calling
-  template and the component element, in source order. Calls that do not
-  resolve are left out.
+  Returns a map from each resolved callee to compact call-site references
+  in source order. Calls that do not resolve are left out.
   """
   @spec call_sites(Graph.t()) :: call_sites()
   def call_sites(%Graph{} = graph) do
@@ -174,10 +174,25 @@ defmodule Soundcheck.Analysis.Components do
           element <- components(template.root),
           {:ok, callee} <- [resolve(element, entry, captures)],
           reduce: %{} do
-        acc -> Map.update(acc, callee, [{template, element}], &[{template, element} | &1])
+        acc ->
+          site = {template.owner, template.id, %{element | children: []}}
+          Map.update(acc, callee, [site], &[site | &1])
       end
 
     Map.new(sites, fn {callee, sites} -> {callee, Enum.reverse(sites)} end)
+  end
+
+  @doc """
+  Returns `callee`'s call sites as `{template, element}` pairs, resolving
+  the render index's template references against `graph`, which must be
+  the graph the `:render_index` link was built from.
+  """
+  @spec sites(Graph.t(), callee()) :: [{Template.t(), Node.Element.t()}]
+  def sites(%Graph{} = graph, callee) do
+    for {{module, fun}, id, element} <- Map.get(Graph.render_index(graph).sites, callee, []) do
+      template = Enum.find(Graph.templates_of(graph, module, fun), &(&1.id == id))
+      {template || raise("render index refers to a template missing from the graph"), element}
+    end
   end
 
   @doc "Resolves one component element of a template owned by `entry`."

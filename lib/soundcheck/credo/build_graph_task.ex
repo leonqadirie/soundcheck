@@ -51,18 +51,26 @@ defmodule Soundcheck.Credo.BuildGraphTask do
   end
 
   @doc """
-  The graph inputs among Credo's `source_files`: those that parsed and lie
-  outside `excluded_paths` (see `Soundcheck.PathFilter.excluded?/2`).
+  Streams graph inputs from successfully parsed files outside `excluded_paths`.
+  This lets graph workers consume ASTs without first copying the entire
+  source set out of Credo's cache.
   """
-  @spec inputs([SourceFile.t()], [Regex.t() | String.t()]) :: [Input.t()]
+  @spec inputs([SourceFile.t()], [Regex.t() | String.t()]) :: Enumerable.t()
   def inputs(source_files, excluded_paths) do
-    for %SourceFile{status: :valid, filename: filename} = source_file <- source_files,
-        not PathFilter.excluded?(filename, excluded_paths) do
+    source_files
+    |> Stream.filter(fn
+      %SourceFile{status: :valid, filename: filename} ->
+        not PathFilter.excluded?(filename, excluded_paths)
+
+      _source_file ->
+        false
+    end)
+    |> Stream.map(fn %SourceFile{filename: filename} = source_file ->
       %Input{
         file: filename,
         source: SourceFile.source(source_file),
         ast: SourceFile.ast(source_file)
       }
-    end
+    end)
   end
 end

@@ -25,3 +25,13 @@ defmodule SoundcheckFixtures.EventPayloadsLive do
   def handle_event("filter", %{"q" => _q}, socket), do: {:noreply, socket}
   def handle_event("filter", _params, socket), do: {:noreply, socket}
 end
+
+defmodule SoundcheckFixtures.EventPayloadCallsLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  import SoundcheckFixtures.EventComponents
+
+  def render(assigns), do: ~H'<.save_button label="Save" />'
+  def handle_event("save", %{"id" => _id}, socket), do: {:noreply, socket}
+end

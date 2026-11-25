@@ -6,12 +6,13 @@ defmodule Soundcheck.Analysis.EventsTest do
   alias Soundcheck.Analysis.Components.Index
   alias Soundcheck.Analysis.Events
   alias Soundcheck.Analysis.Events.Emitter
+  alias Soundcheck.Graph
   alias Soundcheck.Heex.Parser
   alias SoundcheckFixtures.EventComponents
   alias SoundcheckFixtures.EventsComponent
   alias SoundcheckFixtures.EventsLive
 
-  @empty %Index{sites: %{}, delegators: %{}}
+  @empty %Graph{render_index: %Index{sites: %{}, delegators: %{}}}
 
   defp emitters(source), do: Events.emitters(Parser.parse(source))
 
@@ -25,10 +26,30 @@ defmodule Soundcheck.Analysis.EventsTest do
   # under it reads as a function component.
   defp template(source, owner), do: Parser.parse(source, owner: owner, origin: :sigil)
 
-  # An index in which `template`'s `<.tag>` element is the only call site of
+  # A graph in which `template`'s `<.tag>` element is the only call site of
   # `callee`.
   defp index(callee, template, tag),
-    do: %Index{sites: %{callee => [{template, element(template.root, tag)}]}, delegators: %{}}
+    do: index(%{callee => [{template, element(template.root, tag)}]})
+
+  defp index(sites, delegators \\ %{}) do
+    templates = for {_callee, entries} <- sites, {template, _element} <- entries, do: template
+
+    refs =
+      Map.new(sites, fn {callee, entries} ->
+        refs =
+          Enum.map(entries, fn {template, element} ->
+            {template.owner, template.id, %{element | children: []}}
+          end)
+
+        {callee, refs}
+      end)
+
+    %Graph{
+      templates: Enum.uniq(templates),
+      templates_by_owner: Enum.group_by(templates, & &1.owner),
+      render_index: %Index{sites: refs, delegators: delegators}
+    }
+  end
 
   describe "emitters/2 events" do
     test "a JS.push after a JS argument, and through the full alias, names its event" do
@@ -184,15 +205,13 @@ defmodule Soundcheck.Analysis.EventsTest do
       resolved = template(~S|<.panel target={@myself} />|, {EventsComponent, :render})
       dynamic = template(~S|<.panel target="#modal" />|, {EventsComponent, :render})
 
-      index = %Index{
-        sites: %{
+      index =
+        index(%{
           @panel => [
             {resolved, element(resolved.root, ".panel")},
             {dynamic, element(dynamic.root, ".panel")}
           ]
-        },
-        delegators: %{}
-      }
+        })
 
       assert reach(index) == {:unverifiable, :dynamic_target}
     end
@@ -213,7 +232,7 @@ defmodule Soundcheck.Analysis.EventsTest do
           {{:function, EventComponents, callee}, [{site, element(site.root, ".#{callee}")}]}
         end
 
-      %Index{sites: sites, delegators: %{}}
+      index(sites)
     end
 
     test "follows a target forwarded through four function components" do
@@ -286,7 +305,7 @@ defmodule Soundcheck.Analysis.EventsTest do
     end
 
     test "a component a function delegates its assigns to takes the event from a socket assign" do
-      index = %Index{sites: %{}, delegators: %{@event_button => [{EventsLive, :render}]}}
+      index = index(%{}, %{@event_button => [{EventsLive, :render}]})
 
       assert expand(index) == [{:unverifiable, :dynamic_event}]
     end
