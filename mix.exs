@@ -1,7 +1,7 @@
 defmodule Soundcheck.MixProject do
   use Mix.Project
 
-  @version "0.3.1"
+  @version "0.3.2"
   @description "A LiveView-aware Credo plugin that checks contracts between callbacks, HEEx templates, and JS hooks"
 
   def project do

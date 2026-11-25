@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/leonqadirie/soundcheck/compare/v0.3.1...v0.3.2) (2026-11-25)
+
+
+### Performance Improvements
+
+* remove per-call scans that made checks scale quadratically ([#35](https://github.com/leonqadirie/soundcheck/issues/35)) ([a0b08d7](https://github.com/leonqadirie/soundcheck/commit/a0b08d76d908b87e0e1e23c0511f205d2a303099))
+* remove quadratic work from route matching and delegation lookup ([#33](https://github.com/leonqadirie/soundcheck/issues/33)) ([2965073](https://github.com/leonqadirie/soundcheck/commit/29650731cffe77199b982c775436611112321429))
+
 ## [0.3.1](https://github.com/leonqadirie/soundcheck/compare/v0.3.0...v0.3.1) (2026-11-25)
 
 
