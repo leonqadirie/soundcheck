@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/leonqadirie/soundcheck/compare/v0.3.0...v0.3.1) (2026-11-25)
+
+
+### Performance Improvements
+
+* reduce memory usage ([adde39b](https://github.com/leonqadirie/soundcheck/commit/adde39b392e41a226c6970d57b460a3b19560219))
+* store graph links without copies of graph terms ([#30](https://github.com/leonqadirie/soundcheck/issues/30)) ([3c6673c](https://github.com/leonqadirie/soundcheck/commit/3c6673c2901aa2286374cf199709870df736ddbc))
+
 ## [0.3.0](https://github.com/leonqadirie/soundcheck/compare/v0.2.1...v0.3.0) (2026-11-19)
 
 
