@@ -83,7 +83,7 @@ defmodule Soundcheck.Check.Design.UnusedEventHandler do
 
     Enum.reduce_while(Hooks.usages(graph), {:ok, reached}, fn usage, {:ok, acc} ->
       with {:ok, definition} <- Map.fetch(registry.names, usage.name),
-           {:ok, %{pushes: pushes}} <- Hooks.events(graph, definition),
+           {:ok, %{pushes: pushes}} <- Hooks.events(registry, definition),
            emitters = Enum.map(pushes, &{usage.template, push_emitter(&1)}),
            {:ok, acc} <- add_emitters(emitters, acc, render_index) do
         {:cont, {:ok, acc}}

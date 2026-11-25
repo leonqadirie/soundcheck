@@ -51,10 +51,10 @@ defmodule Soundcheck.Check.Warning.UndefinedHookTest do
              ["Assigned", "Classy", "Default", "Named"]
 
     assert {:ok, %{pushes: [%{event: {:literal, "named-ready"}}]}} =
-             Hooks.events(graph, registry.names["Named"])
+             Hooks.events(registry, registry.names["Named"])
 
     assert {:ok, %{pushes: [%{event: {:literal, "assigned-ready"}}]}} =
-             Hooks.events(graph, registry.names["Assigned"])
+             Hooks.events(registry, registry.names["Assigned"])
   end
 
   test "fires on unregistered hooks, including colocated names" do

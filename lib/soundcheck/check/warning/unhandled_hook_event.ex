@@ -57,7 +57,7 @@ defmodule Soundcheck.Check.Warning.UnhandledHookEvent do
     diagnostics =
       for %{name: name} = usage <- Hooks.usages(graph),
           {:ok, definition} <- [Map.fetch(registry.names, name)],
-          {:ok, %{pushes: pushes}} <- [Hooks.events(graph, definition)],
+          {:ok, %{pushes: pushes}} <- [Hooks.events(registry, definition)],
           %{event: {:literal, event}} = push <- pushes,
           diagnostic <- check(graph, usage, push, event, index) do
         diagnostic
