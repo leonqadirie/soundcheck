@@ -12,16 +12,33 @@ defmodule Soundcheck.Analysis.LiveModules do
   alias Soundcheck.Graph
   alias Soundcheck.Span
 
+  @type kind :: :view | :component
+
   @doc """
-  Returns `{entry, kind}` for every indexed module whose compiled form is a
-  LiveView (`:view`) or LiveComponent (`:component`). Modules that cannot be
-  loaded are left out; the Configuration check reports them.
+  Maps the name of every indexed module whose compiled form is a LiveView
+  (`:view`) or LiveComponent (`:component`) to that kind. A module that
+  does not load gets no entry; the Configuration check reports it.
+
+  This is the stored form of the `:live_modules` link: it holds names, so
+  storing it copies no module entry. `entries/2` pairs it with the graph.
   """
-  @spec all(Graph.t()) :: [{Entry.t(), :view | :component}]
-  def all(%Graph{modules: modules}) do
-    for %Entry{name: name} = entry <- modules,
+  @spec kinds(Graph.t()) :: %{module() => kind()}
+  def kinds(%Graph{modules: modules}) do
+    for %Entry{name: name} <- modules,
         name != nil,
         {:ok, %{kind: kind}} <- [Introspect.live(name)],
+        into: %{},
+        do: {name, kind}
+  end
+
+  @doc """
+  Returns `{entry, kind}` for every module of `graph` that `kinds` names,
+  in graph order.
+  """
+  @spec entries(%{module() => kind()}, Graph.t()) :: [{Entry.t(), kind()}]
+  def entries(kinds, %Graph{modules: modules}) do
+    for %Entry{name: name} = entry <- modules,
+        kind = Map.get(kinds, name),
         do: {entry, kind}
   end
 

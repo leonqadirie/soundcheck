@@ -6,6 +6,7 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
   alias Soundcheck.Check.Warning.EventPayloadMismatch
   alias Soundcheck.Graph
   alias Soundcheck.Graph.Link
+  alias Soundcheck.Graph.StoredLink
   alias Soundcheck.Rule
 
   @fixture "test/support/fixtures/event_payloads.ex"
@@ -37,9 +38,8 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
     assert texts(diagnostics) == ["open", "pick"]
   end
 
-  test "many calls do not copy their full template into the render index" do
+  test "the stored render index holds no copy of a template with many calls" do
     calls = 100
-    padding = String.duplicate("x", 100_000)
 
     rendered_calls =
       Enum.map_join(1..calls, "\n", fn _ -> ~s|<.save_button label="Save" />| end)
@@ -51,7 +51,6 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
 
       def render(assigns) do
         ~H\"\"\"
-        #{padding}
         #{rendered_calls}
         \"\"\"
       end
@@ -65,9 +64,8 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
       ]
       |> inputs()
       |> Graph.build(js_paths: [])
-      |> Link.link(EventPayloadMismatch.needs())
 
-    index = Graph.render_index(graph)
+    %StoredLink{value: stored} = Link.compute(:render_index, graph)
 
     template =
       Enum.find(
@@ -75,10 +73,10 @@ defmodule Soundcheck.Check.EventPayloadMismatchTest do
         &(&1.owner == {SoundcheckFixtures.EventPayloadCallsLive, :render})
       )
 
-    bytes = fn term -> :erts_debug.flat_size(term) * :erlang.system_info(:wordsize) end
+    # Flat size is the most a message or a persistent term copies.
+    assert :erts_debug.flat_size(stored) < :erts_debug.flat_size(template)
 
-    assert bytes.(index) < bytes.(template) * 3
-
+    graph = Link.link(graph, EventPayloadMismatch.needs())
     params = EventPayloadMismatch.param_defaults()
     diagnostics = Rule.run(EventPayloadMismatch, graph, params)
 

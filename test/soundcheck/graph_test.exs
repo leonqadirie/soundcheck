@@ -61,6 +61,15 @@ defmodule Soundcheck.GraphTest do
     assert Graph.routes(Graph.Link.link(graph, [:routes])) == []
   end
 
+  test "a link's accessor raises on the stored form of the link" do
+    graph = Graph.build([], js_paths: [])
+    stored = Graph.Link.compute(:routes, graph)
+
+    assert_raise ArgumentError, ~r/stored form of the :routes link/, fn ->
+      Graph.routes(%{graph | routes: stored})
+    end
+  end
+
   test "Graph.Link keeps the links a graph already holds" do
     graph = %{Graph.build([], js_paths: []) | routes: [:kept]}
 

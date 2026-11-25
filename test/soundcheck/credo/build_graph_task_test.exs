@@ -43,6 +43,23 @@ defmodule Soundcheck.Credo.BuildGraphTaskTest do
       assert files(BuildGraphTask.inputs(source_files, [])) == ["lib/a.ex"]
     end
 
+    test "reads a file only when the consumer reaches it" do
+      test = self()
+
+      source_files =
+        Stream.each(
+          [source_file("lib/a.ex"), source_file("lib/b.ex")],
+          &send(test, {:read, &1.filename})
+        )
+
+      inputs = BuildGraphTask.inputs(source_files, [])
+      refute_received {:read, _filename}
+
+      assert files(Enum.take(inputs, 1)) == ["lib/a.ex"]
+      assert_received {:read, "lib/a.ex"}
+      refute_received {:read, "lib/b.ex"}
+    end
+
     test "carries the source and the AST Credo parsed" do
       [input] = [source_file("lib/a.ex")] |> BuildGraphTask.inputs([]) |> Enum.to_list()
 

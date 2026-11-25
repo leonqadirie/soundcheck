@@ -11,12 +11,15 @@ defmodule Soundcheck.Graph do
   #
   # A link field holds `:not_linked` until `Soundcheck.Graph.Link` fills it,
   # and its accessor raises on that value: a check that reads a link it did
-  # not declare fails its first test.
+  # not declare fails its first test. The accessor also raises on a
+  # `Soundcheck.Graph.StoredLink`, the form a link has before
+  # `Soundcheck.Graph.Link.resolve/2`.
   #
   # `Soundcheck.Graph.Current` holds the run's graph.
 
   alias Soundcheck.Elixir.ModuleIndex
   alias Soundcheck.Graph.Input
+  alias Soundcheck.Graph.StoredLink
   alias Soundcheck.Heex.Parser
   alias Soundcheck.Heex.Template
   alias Soundcheck.JS.Extractor
@@ -98,7 +101,7 @@ defmodule Soundcheck.Graph do
     * `:js_paths` - directories scanned for `.js`/`.ts` hook sources
       (default `["assets/js"]`)
   """
-  @spec build(Enumerable.t(), keyword()) :: t()
+  @spec build(Enumerable.t(Input.t()), keyword()) :: t()
   def build(inputs, opts \\ []) do
     opts = Keyword.validate!(opts, js_paths: @default_js_paths)
 
@@ -182,6 +185,11 @@ defmodule Soundcheck.Graph do
       :not_linked ->
         raise ArgumentError,
               "the graph has no #{inspect(link)} link; add it to the check's `needs:` option"
+
+      %StoredLink{} ->
+        raise ArgumentError,
+              "the graph holds the stored form of the #{inspect(link)} link; " <>
+                "`Soundcheck.Graph.Link.resolve/2` returns the value checks read"
 
       value ->
         value
