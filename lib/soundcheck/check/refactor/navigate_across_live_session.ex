@@ -54,12 +54,14 @@ defmodule Soundcheck.Check.Refactor.NavigateAcrossLiveSession do
         &(&1.live_session in Keyword.fetch!(params, :ignore_sessions))
       )
 
+    index = Routes.index(routes)
+
     for {entry, :view} <- Graph.live_modules(graph),
         origin = sessions(routes, &(&1.live_view == entry.name)),
         origin != [],
         {path, span, anchor} <- Navigation.targets(graph, entry, :navigate),
         {:ok, segments} <- [Routes.segments(path)],
-        [_ | _] = candidates <- [Routes.matching(routes, segments)],
+        [_ | _] = candidates <- [Routes.matching(index, segments)],
         targets = sessions(candidates, fn _route -> true end),
         Enum.all?(targets, &(&1 not in origin)) do
       Diagnostic.new(

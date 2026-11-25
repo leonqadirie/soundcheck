@@ -63,13 +63,13 @@ defmodule Soundcheck.Check.Warning.PatchToForeignLiveView do
 
   @impl Soundcheck.Rule
   def analyze(%Graph{} = graph, _params) do
-    routes = Graph.routes(graph)
+    index = Routes.index(Graph.routes(graph))
     hosts = Graph.live_hosts(graph)
 
     for {entry, :view} <- Graph.live_modules(graph),
         {path, span, anchor} <- Navigation.targets(graph, entry, :patch, [:server]),
         {:ok, segments} <- [Routes.segments(path)],
-        [_ | _] = candidates <- [Routes.matching(routes, segments)],
+        [_ | _] = candidates <- [Routes.matching(index, segments)],
         targets = candidates |> Enum.map(& &1.live_view) |> Enum.uniq(),
         entry.name not in targets,
         {message, resolution} <- finding(hosts, entry.name, targets) do

@@ -66,14 +66,15 @@ defmodule Soundcheck.Check.NavigationTest do
 
   describe "Routes" do
     test "match literal and interpolated paths against route patterns" do
-      routes = [%{path: "/posts/:id/edit"}, %{path: "/users/:id"}, %{path: "/files/*path"}]
+      index =
+        Routes.index([%{path: "/posts/:id/edit"}, %{path: "/users/:id"}, %{path: "/files/*path"}])
 
       {:ok, sigil_path} =
         "~p\"/posts/\#{post.id}/edit?tab=1\"" |> Code.string_to_quoted!() |> Routes.segments()
 
-      assert [%{path: "/posts/:id/edit"}] = Routes.matching(routes, sigil_path)
-      assert [%{path: "/files/*path"}] = Routes.matching(routes, ["files", "a", "b"])
-      assert [] = Routes.matching(routes, ["missing"])
+      assert [%{path: "/posts/:id/edit"}] = Routes.matching(index, sigil_path)
+      assert [%{path: "/files/*path"}] = Routes.matching(index, ["files", "a", "b"])
+      assert [] = Routes.matching(index, ["missing"])
       assert :error = Routes.segments({:path, [], nil})
     end
 
@@ -84,6 +85,8 @@ defmodule Soundcheck.Check.NavigationTest do
         %{path: "/requirements"},
         %{path: "/projects"}
       ]
+
+      index = Routes.index(routes)
 
       {:ok, segments} =
         "\"\#{stream_path(socket)}/requirements\""
@@ -97,7 +100,7 @@ defmodule Soundcheck.Check.NavigationTest do
                %{path: "/projects/:id"},
                %{path: "/projects/:id/streams/:stream_id/requirements"},
                %{path: "/requirements"}
-             ] = Routes.matching(routes, segments)
+             ] = Routes.matching(index, segments)
     end
   end
 
