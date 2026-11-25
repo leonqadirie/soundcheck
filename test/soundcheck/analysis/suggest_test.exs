@@ -18,6 +18,14 @@ defmodule Soundcheck.Analysis.SuggestTest do
     assert Suggest.closest("xyz", ["save"]) == nil
   end
 
+  test "a candidate whose length differs by the edit limit still qualifies" do
+    assert Suggest.closest("load-all", ["load-all-x"]) == "load-all-x"
+  end
+
+  test "near miss: a candidate one grapheme past the limit does not qualify" do
+    assert Suggest.closest("load-all", ["load-all-xy"]) == nil
+  end
+
   test "never suggests the name itself" do
     assert Suggest.closest("save", ["save"]) == nil
   end

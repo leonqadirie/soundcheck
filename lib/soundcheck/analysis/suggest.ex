@@ -9,11 +9,16 @@ defmodule Soundcheck.Analysis.Suggest do
 
   @spec closest(String.t(), [String.t()]) :: String.t() | nil
   def closest(name, candidates) do
-    limit = max(1, div(String.length(name), 4))
+    length = String.length(name)
+    limit = max(1, div(length, 4))
 
     candidates
     |> Enum.uniq()
     |> Enum.reject(&(&1 == name))
+    # No edit changes a string's length by more than one, so a candidate
+    # whose length differs by more than `limit` is out of reach. Counting
+    # graphemes costs far less than filling the distance table.
+    |> Enum.filter(&(abs(String.length(&1) - length) <= limit))
     |> Enum.map(&{&1, distance(name, &1)})
     |> Enum.filter(fn {_candidate, distance} -> distance <= limit end)
     |> Enum.sort_by(fn {candidate, distance} ->
