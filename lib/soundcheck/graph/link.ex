@@ -48,7 +48,7 @@ defmodule Soundcheck.Graph.Link do
   @spec compute(Graph.link(), Graph.t()) :: StoredLink.t()
   def compute(link, %Graph{} = graph), do: %StoredLink{link: link, value: stored(link, graph)}
 
-  defp stored(:live_modules, graph), do: LiveModules.all(graph)
+  defp stored(:live_modules, graph), do: LiveModules.kinds(graph)
   defp stored(:routes, graph), do: MountHooks.routes(graph)
   defp stored(:render_index, graph), do: Components.render_index(graph)
   defp stored(:js_helpers, graph), do: Events.js_helpers(graph)
@@ -63,7 +63,7 @@ defmodule Soundcheck.Graph.Link do
     do: resolved(link, value, graph)
 
   defp resolved(:render_index, index, graph), do: Components.resolve_index(index, graph)
-  defp resolved(:live_modules, entries, _graph), do: entries
+  defp resolved(:live_modules, kinds, graph), do: LiveModules.entries(kinds, graph)
   defp resolved(:routes, routes, _graph), do: routes
   defp resolved(:js_helpers, helpers, _graph), do: helpers
   defp resolved(:live_hosts, hosts, _graph), do: hosts
